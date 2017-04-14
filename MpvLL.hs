@@ -144,7 +144,6 @@ play_movie filename =
         putStrLn ("mpv_wait_event: " ++ (show (event_id event)))
         case (event_id event) of
           id | id == mpvEventShutdown  -> return ()
-          id | id == mpvEventIdle  -> return ()
           _ -> (event_loop ctx)
     
 
