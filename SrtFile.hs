@@ -2,7 +2,7 @@ module SrtFile where
 import Text.ParserCombinators.ReadP
 import Control.Monad.State hiding (get)
 import qualified Control.Monad.State as St
-import GHC.Unicode (isSpace)
+import GHC.Unicode (isSpace,isDigit)
 import Control.Applicative ((<|>))
 import System.IO
 
@@ -27,7 +27,7 @@ data SrtError = SrtError { etext :: [String], elines :: Int }
 -- is concerned, they've got me.
 
 digits :: ReadP String
-digits = munch1 (\c -> (c >= '0' && c <='9'))
+digits = munch1 isDigit
 
 int :: ReadP Int
 int = do
