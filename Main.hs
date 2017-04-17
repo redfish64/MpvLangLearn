@@ -4,7 +4,7 @@ import System.Environment
 import MpvLL
 import Control.Monad.State
 import Data.List.Split (splitOn)
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf,elemIndex)
 
 data Track = Track { subId :: Maybe Int, speed :: Float, leadSecs :: Float, tailSecs :: Float }
      deriving (Show)
@@ -90,11 +90,7 @@ isOption x = (isPrefixOf "-" x)
 
 --parses flags and options meant for mpv, returns State with
 -- remaining args
---
---TODO this isn't completely accurate. If an argument to an option starts with a
--- '-' then this will assume that its a flag. The alternative is to find a list
--- of all flags versus options, and this can change per mpv version, so it is what
--- it is
+--CAVEAT: options must use --<opt>=<value> format
 parseMpvOptions :: StateT [String] (Either String) ([MpvFlag],[MpvOption])
 parseMpvOptions =
    do
@@ -105,16 +101,21 @@ parseMpvOptions =
     where
       removeDash ('-' : '-' : xs) = xs
       removeDash ('-' : xs) = xs
+      parseMpvOption x =
+        let opt = removeDash x
+            in
+                do
+                  eqlPos <- elemIndex '=' opt
+                  return (take eqlPos x, drop (eqlPos + 1) x)
       doit =
         do
            (flags,options,args) <- (get)
            case args of
                 [] -> return () --no args left
                 (x : xs) | (not (isOption x)) -> return () --end of option args
-                ( x : y : zs ) | (not (isOption y)) ->
-                                 put (flags, ((removeDash x, y) : options), zs) >> doit
-                ( x : zs ) -> put ( (removeDash x): flags, options, zs) >> doit
-                     
+                (x : xs) -> case parseMpvOption x of
+                                Nothing -> put ( (removeDash x): flags, options, xs) >> doit
+                                Just o -> put (flags, o : options, xs) >> doit
         
 
 parseMpvArgs :: [String] -> Either String MpvArgs
