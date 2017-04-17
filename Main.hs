@@ -5,8 +5,9 @@ import MpvLL
 import Control.Monad.State
 import Data.List.Split (splitOn)
 import Data.List (isPrefixOf,elemIndex)
+import Text.Read (readMaybe)
 
-data Track = Track { subId :: Maybe Int, speed :: Float, leadSecs :: Float, tailSecs :: Float }
+data Track = Track { subIds :: [Int], speed :: Float, leadSecs :: Float, tailSecs :: Float}
      deriving (Show)
 
 
@@ -20,21 +21,20 @@ readTrack str =
   where
     rt2 :: StateT [String] Maybe Track
     rt2 = do
-             subId <- popRead readJustOrNoneOrNothing Nothing
+             sids <- popRead readSids Nothing
              speed <- popRead readOrNothing $ Just 1.0
              leadSecs <- popRead readOrNothing $ Just 0.0
              tailSecs <- popRead readOrNothing $ Just 0.0
-             return $ Track subId speed leadSecs tailSecs
+             return $ Track sids speed leadSecs tailSecs
 
---reads either "none" which means not specified, or
--- a value of the corresponding type wrapped in a maybe
--- Returns:
---   Nothing - invalid input
---   Just Nothing - "none"
---   Just (Just value) - value
-readJustOrNoneOrNothing :: Read a => (String -> Maybe (Maybe a))
-readJustOrNoneOrNothing "none" = Just Nothing
-readJustOrNoneOrNothing s = (readOrNothing s) >>= (\v -> Just $ Just v)
+joinMaybe :: [Maybe a] -> Maybe [a]
+joinMaybe [] = Just []
+joinMaybe (Nothing : _) = Nothing
+joinMaybe ((Just x) : xs) = joinMaybe xs >>= (\xs -> return (x : xs))
+
+
+readSids "none" = Just []
+readSids s = joinMaybe (fmap readMaybe (splitOn "," s))
 
 popRead :: Read a => (String -> Maybe a) -> (Maybe a) -> StateT [String] Maybe a
 popRead reader def =
@@ -54,26 +54,28 @@ readOrNothing x =
         _ -> Nothing
         
 parseTracks :: [String] -> Either String [Track]
-parseTracks [] = Right []
-parseTracks (x : xs) =
-  do
-    t <- (case (readTrack x) of
+parseTracks x = doit x
+  where
+    doit [] = Right []
+    doit (x : xs) =
+         do
+           t <- (case (readTrack x) of
               Nothing -> Left $ "Error, can't parse: "++x
               Just t -> Right t)
-    ts <- parseTracks xs
-    Right (t:ts)
+           ts <- parseTracks xs
+           Right (t:ts)
                           
 
-data Conf = Conf { tracks :: [Track], mpvArgs :: MpvArgs } deriving (Show)
+data Conf = Conf { subfiles :: [String], tracks :: [Track], mpvArgs :: MpvArgs } deriving (Show)
 
-parseArgs :: [String] -> Either String Conf
-parseArgs args = do
-  tracks <- parseTracks (takeWhile (not . (== "--")) args)
-  mpvArgsStr <- (case (dropWhile (not . (== "--")) args) of
-    [] -> Left "args must contain '--'. Args after '--' are directly processed by mpv"
-    (x : xs) -> Right xs)
-  mpvArgs <- parseMpvArgs mpvArgsStr
-  return $ Conf tracks mpvArgs
+--splits a list by a marker into sublists
+splitList :: (a -> Bool) -> [a] -> [[a]]
+splitList f [] = [[]]
+splitList f (x : xs) | (f x) = [] : splitList f xs
+                     | True  =
+                       let (s : ss) = (splitList f xs)
+                           in ((x:s) : ss)
+                              
 
 
 type MpvFlag = String
@@ -106,7 +108,7 @@ parseMpvOptions =
             in
                 do
                   eqlPos <- elemIndex '=' opt
-                  return (take eqlPos x, drop (eqlPos + 1) x)
+                  return (take eqlPos opt, drop (eqlPos + 1) opt)
       doit =
         do
            (flags,options,args) <- (get)
@@ -131,6 +133,15 @@ parseMpvArgs args =
          singleArgs <- get
          return $ MpvArgs flags opts singleArgs
 
+parseArgs :: [String] -> Either String Conf
+parseArgs args = do
+  splitArgs <- return (splitList (== "--") args)
+  if (length splitArgs) /= 3 then (Left "Args must be in format: <srt subtitle files> -- <tracks> -- <mpv args>") else Right ()
+  (subfiles : tracksStr : mpvArgsStr : []) <- return splitArgs
+  tracks <- parseTracks tracksStr
+  mpvArgs <- parseMpvArgs mpvArgsStr
+  return $ Conf subfiles tracks mpvArgs
+
 runit :: Conf -> IO ()
 runit conf = 
   do
@@ -139,6 +150,8 @@ runit conf =
     mpv_set_option_string ctx "input-default-bindings" "yes"
     mpv_set_option_string ctx "input-vo-keyboard" "yes"
     mpv_set_option_flag ctx "osc" 1
+    putStrLn "set flags for subfiles"
+--    recurseMonad (tracks conf) 
     putStrLn "set options"
     setupMpvFlags ctx (flags (mpvArgs conf))
     setupMpvOptions ctx (opts (mpvArgs conf))
