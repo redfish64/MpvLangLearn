@@ -86,6 +86,22 @@ mpv_set_option_flag ctx name v =
             
        )
 
+--TODO reminds me of fold... is it related?
+recurseMonad :: (Monad b) => [a] -> (a -> b x) -> b ()
+recurseMonad [] _ = return ()
+recurseMonad (a : as) f = (f a) >> (recurseMonad as f)
+
+                       
+setupMpvFlags :: Ptr Ctx -> [String] -> IO ()
+setupMpvFlags ctx xs = recurseMonad xs (\x -> mpv_set_option_flag ctx x 1 >> return ())
+  
+
+setupMpvOptions :: Ptr Ctx -> [(String,String)] -> IO ()
+setupMpvOptions ctx xs = recurseMonad xs (\(x,y) -> mpv_set_option_string ctx x y >> return ())
+
+
+       
+
 mpv_initialize ctx = check_mpv_status (c_mpv_initialize ctx)
 
 mpv_wait_event = c_mpv_wait_event
@@ -117,6 +133,18 @@ mpv_command ctx array =
     (\cstr_arr ->
        (check_mpv_status (c_mpv_command ctx cstr_arr)))
 
+loadFiles :: Ptr Ctx -> [String] -> IO ()
+loadFiles ctx xs = recurseMonad xs (\x -> mpv_command ctx ["loadfile",x] >> return ())
+          
+event_loop :: Ptr Ctx -> IO ()
+event_loop ctx =
+      do
+        event <- (mpv_wait_event ctx 1000000) >>= peek 
+        putStrLn ("mpv_wait_event: " ++ (show (event_id event)))
+        case (event_id event) of
+          id | id == mpvEventShutdown  -> return ()
+          _ -> (event_loop ctx)
+
 play_movie :: String -> IO ()
 play_movie filename =
   do
@@ -136,15 +164,6 @@ play_movie filename =
     putStrLn "finished event loop"
     mpv_terminate_destroy ctx -- this should be in some sort of failsafe (like java finally)
     return ()
-  where
-    event_loop :: Ptr Ctx -> IO ()
-    event_loop ctx =
-      do
-        event <- (mpv_wait_event ctx 1000000) >>= peek 
-        putStrLn ("mpv_wait_event: " ++ (show (event_id event)))
-        case (event_id event) of
-          id | id == mpvEventShutdown  -> return ()
-          _ -> (event_loop ctx)
     
 
     
