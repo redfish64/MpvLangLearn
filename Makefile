@@ -1,6 +1,6 @@
 
 MAIN_FILE=Main.hs
-HS_FILES=Main.hs MpvStructs.hs SrtFile.hs
+HS_FILES=Main.hs MpvStructs.hs SrtFile.hs Loops.hs MpvLL.hs
 CFLAGS=-lmpv
 DEBUG=-g
 GHC=ghc

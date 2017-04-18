@@ -1,147 +1,120 @@
 module Main where
 
+import Init
 import System.Environment
 import MpvLL
 import Control.Monad.State
 import Data.List.Split (splitOn)
 import Data.List (isPrefixOf,elemIndex)
 import Text.Read (readMaybe)
+import Control.Exception.Base (Exception,throwIO)
+import SrtFile (loadSrtFile)
+import Loops
+import Control.Monad.Trans.Either
 
-data Track = Track { subIds :: [Int], speed :: Float, leadSecs :: Float, tailSecs :: Float}
-     deriving (Show)
+import Foreign (Ptr,peek)
+import MpvStructs
+
+data MyException = MyException String deriving (Show)
+instance Exception MyException 
 
 
 
---[subtitleid/none[:speed[:lead_secs[:tail_secs]]]](repeatable) -- (mpv args)
-readTrack :: String -> Maybe Track
-readTrack str =
+type MpvLoop = Loop (IO ())
+
+data MpvState = MpvState {
+              ctx :: Ptr Ctx,
+              priorLoops :: [MpvLoop], --loops already run
+              nextLoops :: [MpvLoop], --loops to run later
+              currLoop :: Maybe MpvLoop, --if processing a current loop that has started
+                                    --but not finished, this is it
+              defaultNoSrtAction :: IO () -- if a loop finishes and there isn't another
+                                       -- loop starting, we do this default action here
+           }
+
+
+--in several cases, we need to break out of the main loop and do something else
+--such as wait for a particular time, or handle a shutdown request, etc
+--We use an EitherT to support this. left means to break out and doing something
+--other than the main loop action
+--returns true if should loop again
+type MpvET = StateT MpvState (EitherT (IO Bool) IO) Bool
+
+getActiveLoop st = undefined
+
+event_loop :: MpvState -> IO ()
+--event_loop = undefined
+event_loop mpvState =
   do
-    (track, _) <- runStateT rt2 (splitOn ":" str) -- returns Maybe (Track, [String])
-    return track
-  where
-    rt2 :: StateT [String] Maybe Track
-    rt2 = do
-             sids <- popRead readSids Nothing
-             speed <- popRead readOrNothing $ Just 1.0
-             leadSecs <- popRead readOrNothing $ Just 0.0
-             tailSecs <- popRead readOrNothing $ Just 0.0
-             return $ Track sids speed leadSecs tailSecs
-
-joinMaybe :: [Maybe a] -> Maybe [a]
-joinMaybe [] = Just []
-joinMaybe (Nothing : _) = Nothing
-joinMaybe ((Just x) : xs) = joinMaybe xs >>= (\xs -> return (x : xs))
-
-
-readSids "none" = Just []
-readSids s = joinMaybe (fmap readMaybe (splitOn "," s))
-
-popRead :: Read a => (String -> Maybe a) -> (Maybe a) -> StateT [String] Maybe a
-popRead reader def =
-      StateT (doit reader def)
-  where 
-    doit :: Read a => (String -> Maybe a) -> Maybe a -> ([String] -> Maybe (a, [String]))
-    doit reader def = ( \x -> case x of
-                      [] -> (def >>= (\v -> Just (v, [])))
-                      (s : ss) -> (reader s)
-                                   >>= (\v -> Just (v, ss))
-           )
-           
-readOrNothing :: Read a => String -> Maybe a
-readOrNothing x =
-      case (reads x) of
-        [(v, [])] -> Just v
-        _ -> Nothing
-        
-parseTracks :: [String] -> Either String [Track]
-parseTracks x = doit x
-  where
-    doit [] = Right []
-    doit (x : xs) =
+    x <- runEitherT (runStateT doit mpvState)
+    case x of
+       (Left c) ->
          do
-           t <- (case (readTrack x) of
-              Nothing -> Left $ "Error, can't parse: "++x
-              Just t -> Right t)
-           ts <- parseTracks xs
-           Right (t:ts)
-                          
-
-data Conf = Conf { subfiles :: [String], tracks :: [Track], mpvArgs :: MpvArgs } deriving (Show)
-
---splits a list by a marker into sublists
-splitList :: (a -> Bool) -> [a] -> [[a]]
-splitList f [] = [[]]
-splitList f (x : xs) | (f x) = [] : splitList f xs
-                     | True  =
-                       let (s : ss) = (splitList f xs)
-                           in ((x:s) : ss)
-                              
-
-
-type MpvFlag = String
-
-type MpvOption = (String,String)
-
-data MpvArgs = MpvArgs { flags :: [MpvFlag], opts :: [MpvOption], singleArgs :: [String] } deriving (Show)
-
-
-
-isOption x = (isPrefixOf "-" x)
-
-
-
---parses flags and options meant for mpv, returns State with
--- remaining args
---CAVEAT: options must use --<opt>=<value> format
-parseMpvOptions :: StateT [String] (Either String) ([MpvFlag],[MpvOption])
-parseMpvOptions =
-   do
-     args <- get
-     (_, (flags, options, rem_args)) <- (runStateT doit ([],[],args))
-     put rem_args
-     return (reverse flags,reverse options)
-    where
-      removeDash ('-' : '-' : xs) = xs
-      removeDash ('-' : xs) = xs
-      parseMpvOption x =
-        let opt = removeDash x
-            in
-                do
-                  eqlPos <- elemIndex '=' opt
-                  return (take eqlPos opt, drop (eqlPos + 1) opt)
-      doit =
-        do
-           (flags,options,args) <- (get)
-           case args of
-                [] -> return () --no args left
-                (x : xs) | (not (isOption x)) -> return () --end of option args
-                (x : xs) -> case parseMpvOption x of
-                                Nothing -> put ( (removeDash x): flags, options, xs) >> doit
-                                Just o -> put (flags, o : options, xs) >> doit
-        
-
-parseMpvArgs :: [String] -> Either String MpvArgs
-parseMpvArgs args =
-  do
-    (mpvargs, _) <- (runStateT doit args)
-    return mpvargs
+           res <- c
+           if res Then event_loop 
+       --true we loop again
+       (Right (True, mpvState)) -> event_loop mpvState
+       --false we quit out
+       (Right (False, _)) -> return ()
+    return ()
   where
-    doit :: StateT [String] (Either String) MpvArgs
+    -- --runs action and quits if Bool is true
+    breakif :: Bool -> MpvET -> MpvET
+    breakif True action = action >>= (\res -> lift (left (return res)))
+    breakif False _ = lift $ return True
+
+    -- --runs action and quits if Bool is true
+    breakif2 :: Bool -> IO Bool -> MpvET
+    breakif2 True action = lift $ left action
+    breakif2 False _ = lift $ return True
+
+    -- --waits the given amount of time (or until the next event) and
+    -- --recalls doit
+    waitAndLoop :: Double -> MpvET
+    waitAndLoop wait_time =
+      do
+        st <- get
+        event <- liftIO $ (mpv_wait_event (ctx st) $ realToFrac wait_time) >>= peek
+        breakif2 ((event_id event) == mpvEventShutdown)
+           (do
+                     putStrLn "Bye!"
+                     return False)
+          
+        --restart the event_loop, so it can recheck, since we may not have waited the
+        --complete time because of some other event
+        lift $ left $ return True --quit out after we've run doit
+
+    --if wait time is positive, will wait and loop back to start
+    --else no-op
+    waitForTime :: Double -> Double -> MpvET
+    waitForTime = undefined
+    -- waitForTime st ct et =
+    --   do
+    --     timeToWait <- return et - ct
+    --     if (timeToWait > 0)
+    --       then
+    --         waitAndLoop timeToWait
+    --       else
+    --         right $ return () --no reason to wait, so continue
+
+ 
+    doit :: MpvET
     doit =
       do
-         (flags,opts) <- parseMpvOptions 
-         singleArgs <- get
-         return $ MpvArgs flags opts singleArgs
+        st <- get
+        ctx <- return (ctx st)
+        time <- liftIO $ mpv_get_property_double ctx "time-pos"
+        breakif (time == Nothing) (waitAndLoop 1)
+        (Just jtime) <- return time
+        
+        (inLoop, loop) <- return (getActiveLoop st)
 
-parseArgs :: [String] -> Either String Conf
-parseArgs args = do
-  splitArgs <- return (splitList (== "--") args)
-  if (length splitArgs) /= 3 then (Left "Args must be in format: <srt subtitle files> -- <tracks> -- <mpv args>") else Right ()
-  (subfiles : tracksStr : mpvArgsStr : []) <- return splitArgs
-  tracks <- parseTracks tracksStr
-  mpvArgs <- parseMpvArgs mpvArgsStr
-  return $ Conf subfiles tracks mpvArgs
-
+        waitForTime (realToFrac jtime) (if inLoop then (endTime loop) else (startTime loop))
+        return True
+        
+        
+        
+     
 runit :: Conf -> IO ()
 runit conf = 
   do
@@ -151,15 +124,16 @@ runit conf =
     mpv_set_option_string ctx "input-vo-keyboard" "yes"
     mpv_set_option_flag ctx "osc" 1
     putStrLn "set flags for subfiles"
---    recurseMonad (tracks conf) 
+    recurseMonad (subfiles conf) (\sf -> mpv_set_option_string ctx "sub-file" sf )
     putStrLn "set options"
     setupMpvFlags ctx (flags (mpvArgs conf))
     setupMpvOptions ctx (opts (mpvArgs conf))
     mpv_initialize ctx
     putStrLn "initialized"
+    --TODO if file doesn't exist, doesn't report an error
     loadFiles ctx (singleArgs (mpvArgs conf))
     putStrLn "loaded files"
-    event_loop ctx
+--    event_loop ctx undefined
     putStrLn "finished event loop"
     mpv_terminate_destroy ctx -- this should be in some sort of failsafe (like java finally)
     return ()
@@ -167,8 +141,29 @@ runit conf =
 main :: IO ()
 main =
   do
-    args <- getArgs
-    case (parseArgs args) of
-      Right (c)-> runit c
-      Left s -> putStrLn $ "Error: " ++ s
-      
+    argsStr <- getArgs
+    c <- case (parseArgs argsStr) of
+                 Left s -> throwIO $ MyException $ "Error: " ++ s
+                 Right c -> return c
+    srtArrays <- doMonadOnList (subfiles c) loadSrtFile
+--    loopArrays <- return createLoopArrays srtArrays (tracks c)
+    runit c
+    
+-- createLoopArraysForTrack :: [[Srt]] -> Track -> [Loop]
+-- createLoopArraysForTrack srtss t =
+--   case (subIds t) of
+--     [] -- no srt at all, the default case
+
+-- createLoopArrays :: [[Srt]] -> [Track] -> [[Loop]]
+-- createLoopArrays srtss [] = []
+-- createLoopArrays srtss (t : tracks) =
+                       
+
+doMonadOnList :: Monad m => [a] -> (a -> m b) -> (m [b])
+doMonadOnList [] _ = return []
+doMonadOnList (a : as) f =
+   do
+     b <- (f a)
+     bs <- doMonadOnList as f
+     return (b : bs)
+                                                        

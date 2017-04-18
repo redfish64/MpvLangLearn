@@ -14,6 +14,7 @@ newtype MpvEventId = MpvEventId { unMpvEventId :: CInt } deriving (Eq,Show)
  , mpvEventShutdown = MPV_EVENT_SHUTDOWN
  , mpvEventLogMessage = MPV_EVENT_LOG_MESSAGE
  , mpvEventIdle = MPV_EVENT_IDLE
+ , mpvEventPlaybackRestart = MPV_EVENT_PLAYBACK_RESTART
  }
 
 instance Storable MpvEventId where

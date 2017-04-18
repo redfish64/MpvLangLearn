@@ -47,7 +47,13 @@ foreign import ccall unsafe "mpv/client.h mpv_command"
         c_mpv_command :: (Ptr Ctx) -> (Ptr CString) -> IO CInt
 
 foreign import ccall unsafe "mpv/client.h mpv_wait_event"
-        c_mpv_wait_event :: (Ptr Ctx) -> CInt -> IO (Ptr MpvEvent)
+        c_mpv_wait_event :: (Ptr Ctx) -> CDouble -> IO (Ptr MpvEvent)
+
+-- foreign import ccall unsafe "mpv/client.h mpv_observe_property"
+--         c_mpv_observe_property (Ptr Ctx) -> CInt -> CInt -> IO CInt
+
+foreign import ccall unsafe "mpv/client.h mpv_get_property"
+        c_mpv_get_property :: (Ptr Ctx) -> CString -> CInt -> (Ptr ()) -> IO CInt
 
 --if func returns true, throws an exception
 throw_mpve_on :: IO a -> (a -> Bool) -> IO a
@@ -86,6 +92,28 @@ mpv_set_option_flag ctx name v =
             
        )
 
+
+--gets a property
+--Ex. "time-pos"  position in current file in seconds
+mpv_get_property_double :: (Ptr Ctx) -> String -> IO (Maybe CDouble)
+mpv_get_property_double ctx name =
+  do
+    withCString name
+       (\cname ->
+          alloca
+            ((\value ->
+               do
+                 voidvalue <- return (castPtr value)
+                 --TODO: put in enum (5 == MPV_FORMAT_DOUBLE)
+                 status <- c_mpv_get_property ctx cname 5 voidvalue
+                 if status < 0
+                 then
+                   return Nothing
+                 else
+                   ((peek value) >>= return . Just)
+             ) :: (Ptr CDouble -> IO (Maybe CDouble)))
+            
+       )
 --TODO reminds me of fold... is it related?
 recurseMonad :: (Monad b) => [a] -> (a -> b x) -> b ()
 recurseMonad [] _ = return ()
@@ -136,14 +164,6 @@ mpv_command ctx array =
 loadFiles :: Ptr Ctx -> [String] -> IO ()
 loadFiles ctx xs = recurseMonad xs (\x -> mpv_command ctx ["loadfile",x] >> return ())
           
-event_loop :: Ptr Ctx -> IO ()
-event_loop ctx =
-      do
-        event <- (mpv_wait_event ctx 1000000) >>= peek 
-        putStrLn ("mpv_wait_event: " ++ (show (event_id event)))
-        case (event_id event) of
-          id | id == mpvEventShutdown  -> return ()
-          _ -> (event_loop ctx)
 
 play_movie :: String -> IO ()
 play_movie filename =
@@ -164,7 +184,14 @@ play_movie filename =
     putStrLn "finished event loop"
     mpv_terminate_destroy ctx -- this should be in some sort of failsafe (like java finally)
     return ()
-    
-
-    
-      
+  where
+   event_loop :: Ptr Ctx -> IO ()
+   event_loop ctx =
+      do
+        event <- (mpv_wait_event ctx 1) >>= peek 
+        putStrLn ("mpv_wait_event: " ++ (show (event_id event)))
+        time <- mpv_get_property_double ctx "time-pos"
+        putStrLn ("time: " ++ (show time))
+        case (event_id event) of
+          id | id == mpvEventShutdown  -> return ()
+          _ -> (event_loop ctx)

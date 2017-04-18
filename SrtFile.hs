@@ -6,7 +6,7 @@ import GHC.Unicode (isSpace,isDigit)
 import Control.Applicative ((<|>))
 import System.IO
 
-data Srt = Srt { startTime :: Int, endTime :: Int, text :: [String], lines :: Int }
+data Srt = Srt { startTime :: Double, endTime :: Double, text :: [String], lines :: Int }
      deriving (Show)
 data SrtError = SrtError { etext :: [String], elines :: Int }
      deriving (Show)
@@ -82,7 +82,7 @@ readLines1 pat =
     return vals
 
 -- 00:00:50,630
-srtTime :: ReadP Int
+srtTime :: ReadP Double
 srtTime = do
              h <- int
              string ":"
@@ -91,7 +91,10 @@ srtTime = do
              s <- int
              string ","
              ms <- int
-             return $ ms + 1000 * (s + 60 * (m + 60 * h))
+             return $ (fromIntegral ms) * 0.001
+                      + ((fromIntegral s)
+                      + 60.0 * ((fromIntegral m)
+                      + 60.0 * (fromIntegral h)))
 
 -- a line containing a non whitespace character
 nonEmpty :: ReadP String          
@@ -129,20 +132,6 @@ srt = do
          readLines1 whitespace
          lines <- St.get
          return $ Srt startTime endTime text lines
-
-srtError :: ReadP SrtError
-srtError = do
-          (s, c) <- runStateT srtError2 0
-          return s
-      where
-       srtError2 :: StateT Int ReadP SrtError
-       srtError2 = do
-         --if we don't understand it, just skip all the crap until we get to another blank line
-         readLines whitespace
-         text <- readLines1 nonEmpty
-         readLines whitespace
-         lines <- St.get
-         return $ SrtError text lines
 
 srtFile :: ReadP [ Srt ]
 srtFile = do
