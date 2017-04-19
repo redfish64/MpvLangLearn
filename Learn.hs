@@ -3,6 +3,7 @@ import Control.Exception.Base
 import Control.Monad.Trans.Either
 import Control.Monad.IO.Class
 import Control.Monad.State
+import Control.Monad.RWS
 
 data MyException = MyException String deriving (Show)
 instance Exception MyException 
@@ -68,3 +69,26 @@ data X m = X { xfoo :: m ()}
 
 xmonadTest :: X m -> m ()
 xmonadTest x = xfoo x
+
+
+data X2 m = Maybe m
+type X2p m = Maybe m
+
+
+rwsTest :: IO ()
+rwsTest =
+   do
+     (res, state, writer) <- runRWST myMonadBro 5 6.0
+     putStrLn $ "state is "++(show state)
+     putStrLn $ "writer is "++(show writer)
+   where
+     myMonadBro :: RWST Int [String] Double IO ()
+     myMonadBro =
+       do
+         v <- ask
+         put 7.0
+         tell ["my man!"]
+         tell ["yo brah!"]
+         let x = 1
+         tell [show x]
+         return ()
