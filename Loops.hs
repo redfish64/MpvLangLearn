@@ -3,7 +3,7 @@ module Loops where
 import Data.List
 import Data.Ord
 
-data Loop a = Loop { action :: a, startTime :: Double, endTime :: Double }
+data Loop a = Loop { action :: a, startTime :: Double, endTime :: Double } deriving (Show)
 
 instance Eq (Loop a) where
   a == b = (startTime a) == (startTime b) &&

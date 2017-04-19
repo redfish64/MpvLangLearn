@@ -63,3 +63,8 @@ doeitherstatetest =
     val <- runEitherT (runStateT eitherstatetest 1)
     case val of (Left c) -> c; (Right c)-> putStrLn $ "result: "++(show c)
     return ()
+
+data X m = X { xfoo :: m ()}
+
+xmonadTest :: X m -> m ()
+xmonadTest x = xfoo x
