@@ -15,7 +15,7 @@ data MpvStatus =
                -- next action not run (which would be defaultNoSrtAction or the
                -- next loops action, if outside or inside another loop respectively)
   | MpvShutdown -- in shutdown state (the user quit)
-  deriving (Show)
+  deriving (Show, Eq)
 
 data MpvState m = MpvState {
               priorLoops :: [MpvLoop], --loops already run
@@ -33,9 +33,10 @@ data MpvState m = MpvState {
 
 instance Show (MpvState m) where
   show s = "MpvState { priorLoops="++show(priorLoops s)++", nextLoops="++show(nextLoops s)++", status="++show(status s)++" }"
-      
 
 type MpvM m = StateT (MpvState m) m
+
+createMpvLoop startTime endTime speed sid = Loop (MpvLoopData speed sid) startTime endTime
 
 event_loop :: Monad m => MpvState m -> m ()
 --event_loop = undefined
@@ -117,8 +118,10 @@ event_loop mpvState = runStateT doit mpvState >> return ()
                     --seek (backwards) to the start of the loop and play it
                     lift $ (seekAction st loop) >> (playAction st loop)
                     put $ st {status=MpvInLoop}
+          MpvShutdown -> return ()
 
-        doit --restart the event loop
+        if (status st) == MpvShutdown then return ()
+        else doit --restart the event loop
 
 bigTime = 99999999
 

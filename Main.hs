@@ -12,6 +12,7 @@ import SrtFile (loadSrtFile)
 import Foreign (Ptr,peek)
 import MpvStructs
 import EventLoop
+import Util
 
 data MyException = MyException String deriving (Show)
 instance Exception MyException 

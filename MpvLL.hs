@@ -12,6 +12,7 @@ import MpvStructs
 
 import Control.Exception
 --import Data.Typeable
+import Util
 
 data MpvException = MpvException
     deriving (Show)
@@ -114,11 +115,6 @@ mpv_get_property_double ctx name =
              ) :: (Ptr CDouble -> IO (Maybe CDouble)))
             
        )
---TODO reminds me of fold... is it related?
-recurseMonad :: (Monad b) => [a] -> (a -> b x) -> b ()
-recurseMonad [] _ = return ()
-recurseMonad (a : as) f = (f a) >> (recurseMonad as f)
-
                        
 setupMpvFlags :: Ptr Ctx -> [String] -> IO ()
 setupMpvFlags ctx xs = recurseMonad xs (\x -> mpv_set_option_flag ctx x 1 >> return ())
