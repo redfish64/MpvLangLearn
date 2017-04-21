@@ -13,11 +13,11 @@ data TestEnv = TestEnv { waitActionStrategy :: WaitActionStrategy }
 
 data TestState = TestState { currTime :: Maybe Double, --this is play time, so modified by speed
                              videoLength :: Double,
-                             sid :: Maybe Int,
+                             sids :: [Int],
                              speed :: Double --playback speed
                            } deriving (Show)
 
-type TestM = RWS TestEnv[(String,TestState)] TestState
+type TestM = RWS TestEnv [(String,TestState)] TestState
 
 tlog :: String -> TestM ()
 tlog msg = do
@@ -27,12 +27,19 @@ tlog msg = do
 defaultNoSrtAction1 :: TestM ()
 defaultNoSrtAction1 =
   do
-    modify $ \st -> st { speed = 1.0, sid = Nothing }
+    modify $ \st -> st { speed = 1.0, sids = [] }
     tlog "defaultNoSrtAction1"
+
 readTimeAction1 = do
                     st <- get
                     tlog "readTimeAction1"
                     return (currTime st)
+
+readSpeedAction1 = do
+                    st <- get
+                    tlog "readSpeedAction1"
+                    return $ Just (speed st)
+
 waitAction1 :: Double -> TestM Bool
 waitAction1 time = do
   st <- get
@@ -47,7 +54,7 @@ waitAction1 time = do
   where
     calcWaitTime st env =
       case (waitActionStrategy env) of
-        WASLimit limit -> (min (time / (speed st)) limit)
+        WASLimit limit -> (min (time * (speed st)) limit)
         
 seekAction1 :: MpvLoop -> TestM ()        
 seekAction1 loop = do
@@ -60,23 +67,24 @@ seekAction1 loop = do
 playAction1 :: MpvLoop -> TestM ()        
 playAction1 loop = do
   do
-    modify $ \st -> st { speed=(EL.speed . val $ loop) , sid = (EL.sid . val $ loop) }
+    modify $ \st -> st { speed=(EL.speed . val $ loop) , sids = EL.sids . val $ loop }
     tlog "playAction1"
 
 st1 :: EL.MpvState TestM
-st1 = EL.createInitialMpvState loops1 defaultNoSrtAction1 readTimeAction1 waitAction1
+st1 = EL.createInitialMpvState loops1 defaultNoSrtAction1 readTimeAction1
+                               readSpeedAction1 waitAction1
                                seekAction1 playAction1
 
 loops1 = fmap (\(st,ed,speed,sid) -> EL.createMpvLoop st ed speed sid)
   [
-    (5.0,10.0,1.0,Just 1)
-  , (15.0,25.0,0.95,Just 1)
-  , (15.0,25.0,0.85,Just 2)
+    (5.0,10.0,1.0, [1])
+  , (15.0,25.0,0.95,[1])
+  , (15.0,25.0,0.85,[2,1])
   ]
 
 
 test1 = runRWS (EL.event_loop st1) (TestEnv $ WASLimit 30.0)
-                       (TestState Nothing 30.0 Nothing 1.0)
+                       (TestState Nothing 30.0 [] 1.0)
 
 
 run (res,state,writer) = writer
@@ -85,6 +93,4 @@ pt writer =
     do
       recurseMonad writer (\(s,t) -> putStrLn $ printf "%-30s %s" s (show t))
 
-
---to test, for example, run:
---  pt $ take 10 (run test1)
+pt1 = pt (run test1)

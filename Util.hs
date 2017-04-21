@@ -5,3 +5,7 @@ recurseMonad :: (Monad b) => [a] -> (a -> b x) -> b ()
 recurseMonad [] _ = return ()
 recurseMonad (a : as) f = (f a) >> (recurseMonad as f)
 
+
+maybeDefault :: Maybe m -> m -> m
+maybeDefault Nothing def = def
+maybeDefault (Just v) _ = v

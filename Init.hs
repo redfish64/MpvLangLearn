@@ -7,15 +7,16 @@ import Data.List.Split (splitOn)
 import Data.List (isPrefixOf,elemIndex)
 import Text.Read (readMaybe)
 import Control.Exception.Base (Exception,throwIO)
-import SrtFile (loadSrtFile)
+import SrtFile (loadSrtFile, Srt)
+import qualified SrtFile as SF
 import Loops
 import Control.Monad.Trans.Either
 
 import Foreign (Ptr)
-
+import EventLoop (MpvLoop,createMpvLoop)
   
 
-data Track = Track { subIds :: [Int], speed :: Float, leadSecs :: Float, tailSecs :: Float}
+data Track = Track { sids :: [Int], speed :: Double, leadSecs :: Double, tailSecs :: Double}
      deriving (Show)
 
 type MpvFlag = String
@@ -148,3 +149,22 @@ parseArgs args = do
   tracks <- parseTracks tracksStr
   mpvArgs <- parseMpvArgs mpvArgsStr
   return $ Conf subfiles tracks mpvArgs
+
+
+createLoopArraysForTrack :: [[Srt]] -> Track -> [MpvLoop]
+createLoopArraysForTrack srtss t =
+  let timingSid = 
+        case (sids t) of
+           [] -> 1
+           x : xs -> x
+      srts = srtss !! (timingSid-1)
+  in
+    fmap ((\srt -> createMpvLoop ((SF.startTime srt) - (leadSecs t))
+                                ((SF.endTime srt) - (tailSecs t))
+                                (speed t) (sids t)) :: Srt -> MpvLoop)
+         srts
+
+createLoopArrays :: [[Srt]] -> [Track] -> [[MpvLoop]]
+createLoopArrays srtss tracks = fmap (createLoopArraysForTrack srtss) tracks
+                       
+

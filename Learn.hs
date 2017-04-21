@@ -4,6 +4,7 @@ import Control.Monad.Trans.Either
 import Control.Monad.IO.Class
 import Control.Monad.State
 import Control.Monad.RWS
+import Control.Monad.Reader
 
 data MyException = MyException String deriving (Show)
 instance Exception MyException 

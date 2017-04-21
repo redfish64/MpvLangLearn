@@ -2,8 +2,9 @@ module EventLoop where
 
 import Control.Monad.State
 import Loops
+import Util
 
-data MpvLoopData = MpvLoopData { speed :: Double, sid :: Maybe Int } deriving (Show)
+data MpvLoopData = MpvLoopData { speed :: Double, sids :: [Int] } deriving (Show)
 
 type MpvLoop = Loop MpvLoopData
 
@@ -25,6 +26,7 @@ data MpvState m = MpvState {
                                        -- loop starting, we do this default action here
               readTimeAction :: m (Maybe Double), -- returns the current time. May return nothing
                                               -- if unknown
+              readSpeedAction :: m (Maybe Double), -- returns the current speed.
               waitAction :: Double -> m Bool, -- waits the given period of time (or less)
                                               -- returns true if user requested shutdown
               seekAction :: MpvLoop -> m (), --action when we need to seek to the start of a loop 
@@ -36,7 +38,7 @@ instance Show (MpvState m) where
 
 type MpvM m = StateT (MpvState m) m
 
-createMpvLoop startTime endTime speed sid = Loop (MpvLoopData speed sid) startTime endTime
+createMpvLoop startTime endTime speed sids = Loop (MpvLoopData speed sids) startTime endTime
 
 event_loop :: Monad m => MpvState m -> m ()
 --event_loop = undefined
@@ -46,7 +48,9 @@ event_loop mpvState = runStateT doit mpvState >> return ()
     waitAndLoop wait_time =
       do
         st <- get
-        ifextract (lift $ (waitAction st) wait_time) id
+        mspeed <- lift $ (readSpeedAction st)
+        let speed = maybeDefault mspeed 1.0
+        ifextract (lift $ (waitAction st) $ wait_time/speed) id
           (put (st { status = MpvShutdown }))
           (return ())
         -- (mpv_wait_event (ctx st) $ realToFrac wait_time) >>= peek
@@ -127,7 +131,7 @@ bigTime = 99999999
 
 createInitialMpvState loops defaultNoSrtAction readTimeAction waitAction seekAction playAction =
   MpvState []
-           (loops ++ [(Loop (MpvLoopData 1.0 Nothing) bigTime bigTime)]) -- we add an ending loop which keeps the system playing until the end of the movie
+           (loops ++ [(Loop (MpvLoopData 1.0 []) bigTime bigTime)]) -- we add an ending loop which keeps the system playing until the end of the movie
            MpvStart
            defaultNoSrtAction
            readTimeAction

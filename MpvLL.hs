@@ -93,6 +93,20 @@ mpv_set_option_flag ctx name v =
             
        )
 
+mpv_set_option_double ctx name v =
+  do
+    withCString name
+       (\cname ->
+          alloca
+            ((\value ->
+               do
+                 poke value v
+                 voidvalue <- return (castPtr value)
+                 --5 == MPV_FORMAT_DOUBLE TODO: put in enum
+                 check_mpv_status (c_mpv_set_option ctx cname 5 voidvalue)) :: (Ptr CDouble -> IO CInt))
+            
+       )
+
 
 --gets a property
 --Ex. "time-pos"  position in current file in seconds

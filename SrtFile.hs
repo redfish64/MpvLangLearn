@@ -1,10 +1,16 @@
 module SrtFile where
 import Text.ParserCombinators.ReadP
 import Control.Monad.State hiding (get)
+import Control.Monad.Writer
 import qualified Control.Monad.State as St
 import GHC.Unicode (isSpace,isDigit)
 import Control.Applicative ((<|>))
+import qualified System.IO.Strict as SIS
+import Control.DeepSeq (($!!),deepseq)
+import GHC.IO.Encoding
 import System.IO
+
+avoidcrashes h = hSetEncoding h =<< getFileSystemEncoding
 
 data Srt = Srt { startTime :: Double, endTime :: Double, text :: [String], lines :: Int }
      deriving (Show)
@@ -104,6 +110,20 @@ nonEmpty = do
                 x2 <- many $ satisfy (\c -> (c /= '\n'))
                 return $ x1 ++ [c] ++ x2
 
+--skips some empty lines, at least one non-empty line, and one more empty line
+skipSrt :: ReadP [String]
+skipSrt =
+  do
+    (s, c) <- runStateT skipSrt2 0
+    return s
+  where
+    skipSrt2 = do
+      pre <- readLines whitespace
+      sub <- readLines1 $ nonEmpty
+      post <- lift $ whitespace
+      readLine 
+      return $ pre ++ sub ++ [post++"\n"]
+
 srt :: ReadP Srt
 srt = do
           (s, c) <- runStateT srt2 0
@@ -138,19 +158,49 @@ srtFile = do
             srts <- many srt
             eof
             return srts
-            
 
---TODO handle errors
-loadSrtFile :: String -> IO [ Srt ]
+
+eatEEBBBF ('\65279' : s) = s -- U+FFEF at the start is a BOM
+eatEEBBBF s = s
+
+
+--loads an srt file.
+--returns a list of srts and a list of strings indicating errors reading srts, if any
+loadSrtFile :: String -> IO [Either [String] Srt]
 loadSrtFile f =
   do
-    handle <- openBinaryFile f ReadMode
+--    contents <- readFile f
+    handle <- openFile f ReadMode
+    avoidcrashes handle
     contents <- hGetContents handle
-    [(srts, _)] <- return $! (readP_to_S srtFile contents)
-    hClose handle
+    contents <- return (eatEEBBBF contents)
+    contents `deepseq` hClose handle
+    srts <- return $ loadSrts contents
     return srts
+  where
+    loadSrts :: String -> [Either [String] Srt]
+    loadSrts [] = []
+    loadSrts contents =
+             case (readP_to_S srt contents) of
+               [(srt,contents)] -> (Right srt) : loadSrts contents
+               [] ->
+                 case (readP_to_S skipSrt contents) of
+                   [(skipSrt, contents)] -> Left skipSrt : loadSrts contents
+                   [] -> [] --if we can't read skipSrt, there are no non blank lines left in
+                            --the file
+-- ts :: String -> IO ()
+-- ts f =
+--   do
+--     handle <- openFile f ReadMode
+--     contents <- hGetContents handle
+--     contents `deepseq` hClose handle
+--     srts <- return $! (readP_to_S srtFile contents)
+--     hClose handle
+--     putStrLn (show srts)
+--     return ()
 
-         
+
+      
 testSrt = "1\r\n00:00:50,630 --> 00:00:52,564\r\n[ Button Clicks ]\r\n\r\n"
 
   
