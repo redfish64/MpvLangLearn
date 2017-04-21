@@ -20,9 +20,25 @@ setSpeed speed =
   do 
     lift $ putStrLn $ "setSpeed: "++(show speed)
     env <- ask
-    lift $ M.check_mpv_status(M.mpv_set_option_double (ctx env) "speed" (realToFrac speed))
+    lift $ M.mpv_set_property_double (ctx env) "speed" (realToFrac speed)
     lift $ putStrLn $ "done setSpeed: "++(show speed)
     return ()
+
+setSids :: [Int] -> MLM ()
+setSids sids =
+  do
+    env <- ask
+    let (sid,ssid) = case sids of
+                          [] -> ("no","no")
+                          --TODO, use int based set option
+                          x : [] -> (show x,"no")
+                          x1 : x2 : _ -> (show x1, show x2)
+    lift $ putStrLn $ "setSids " ++ (show (sid,ssid))
+    lift $ do
+                M.mpv_set_property_string (ctx env) "sid" sid
+                M.mpv_set_property_string (ctx env) "secondary-sid" ssid
+    return ()
+
 
 defaultNoSrtAction :: MLM ()
 defaultNoSrtAction =
@@ -33,14 +49,14 @@ defaultNoSrtAction =
 readDouble :: String -> MLM (Maybe Double)
 readDouble name =
   do
-    lift $ putStrLn $ "readDouble: "++name
+--    lift $ putStrLn $ "readDouble: "++name
     env <- ask
     time <- (lift $ M.mpv_get_property_double (ctx env) name)
-    lift $ putStrLn $ "done readDouble: "++name
+--    lift $ putStrLn $ "done readDouble: "++name
     return $ realToFrac <$> time
     
 readTimeAction :: MLM (Maybe Double)
-readTimeAction = readDouble "time-pos"
+readTimeAction = readDouble "playback-time"
 
 readSpeedAction :: MLM (Maybe Double)
 readSpeedAction = readDouble "speed"
@@ -57,12 +73,17 @@ seekAction :: EL.MpvLoop -> MLM ()
 seekAction loop =
   do
     env <- ask
-    lift $ M.check_mpv_status(M.mpv_set_option_double (ctx env) "time-pos"
-                              (realToFrac (startTime loop)))
+    lift $ putStrLn $ "seeking to " ++ (show (startTime loop))
+    lift $ M.mpv_set_property_double (ctx env) "playback-time" (realToFrac (startTime loop))
+    lift $ putStrLn $ "done seeking to " ++ (show (startTime loop))
     return ()
 
 playAction :: EL.MpvLoop -> MLM ()
-playAction loop = setSpeed (EL.speed (val loop))
+playAction loop =
+  do
+    setSpeed (EL.speed (val loop))
+    setSids (EL.sids (val loop))
+
 
 
 createInitialMpvState loops =

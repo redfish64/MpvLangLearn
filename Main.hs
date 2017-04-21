@@ -80,7 +80,7 @@ main =
                         line <- get
                         lift $ putStrLn
                           (printf "Error processing sub at line %d, skipping:\n%s" line
-                                  (foldr (++) "" error))
+                                  (foldr (\x -> \y -> x ++ "\n" ++ y) "" error))
                         let len = (length error)
                         modify (+ len)
     printError (Right srt) =

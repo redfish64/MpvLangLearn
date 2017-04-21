@@ -36,12 +36,18 @@ foreign import ccall unsafe "mpv/client.h mpv_terminate_destroy"
 foreign import ccall unsafe "mpv/client.h mpv_set_option_string"
         c_mpv_set_option_string :: (Ptr Ctx) -> CString -> CString -> IO CInt
 
+foreign import ccall unsafe "mpv/client.h mpv_set_property_string"
+        c_mpv_set_property_string :: (Ptr Ctx) -> CString -> CString -> IO CInt
+
  -- * @param name Option name. This is the same as on the mpv command line, but
  -- *             without the leading "--".
  -- * @param format see enum mpv_format.
  -- * @param[in] data Option value (according to the format).
 foreign import ccall unsafe "mpv/client.h mpv_set_option"
         c_mpv_set_option :: (Ptr Ctx) -> CString -> CInt -> (Ptr ()) -> IO CInt
+
+foreign import ccall unsafe "mpv/client.h mpv_set_property"
+        c_mpv_set_property :: (Ptr Ctx) -> CString -> CInt -> (Ptr ()) -> IO CInt
 
 --Ptr CString must be a null terminated array of strings
 foreign import ccall unsafe "mpv/client.h mpv_command"
@@ -57,12 +63,14 @@ foreign import ccall unsafe "mpv/client.h mpv_get_property"
         c_mpv_get_property :: (Ptr Ctx) -> CString -> CInt -> (Ptr ()) -> IO CInt
 
 --if func returns true, throws an exception
-throw_mpve_on :: IO a -> (a -> Bool) -> IO a
+throw_mpve_on :: Show a => IO a -> (a -> Bool) -> IO a
 throw_mpve_on iv f =
   do
     v <- iv
     case (f v) of
-      True -> throw MpvException
+      True -> --throw MpvException
+              do putStrLn("Exception! "++(show v))
+                 return v
       False -> return v
 
 --checks for mpv status and throws exception if fails (if status is less than zero)
@@ -106,6 +114,29 @@ mpv_set_option_double ctx name v =
                  check_mpv_status (c_mpv_set_option ctx cname 5 voidvalue)) :: (Ptr CDouble -> IO CInt))
             
        )
+
+mpv_set_property_double ctx name v =
+  do
+    withCString name
+       (\cname ->
+          alloca
+            ((\value ->
+               do
+                 poke value v
+                 voidvalue <- return (castPtr value)
+                 --5 == MPV_FORMAT_DOUBLE TODO: put in enum
+                 check_mpv_status (c_mpv_set_property ctx cname 5 voidvalue)) :: (Ptr CDouble -> IO CInt))
+            
+       )
+
+mpv_set_property_string ctx name value =
+  do
+    withCString name
+       (\cname ->
+         withCString value
+           (\cvalue ->
+              (check_mpv_status (c_mpv_set_property_string ctx cname cvalue))))
+              
 
 
 --gets a property
