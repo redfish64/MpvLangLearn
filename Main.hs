@@ -2,7 +2,7 @@ module Main where
 
 import Init
 import System.Environment
-import MpvLL
+import MpvFFI
 import Data.List.Split (splitOn)
 import Data.List (isPrefixOf,elemIndex)
 import Text.Read (readMaybe)
@@ -19,7 +19,7 @@ import EventLoop
 import Util
 import Loops (sortLoopsForPlay)
 import Control.Monad.Reader (runReaderT)
-import qualified MpvLoops as ML
+import MpvLoops 
 
 data MyException = MyException String deriving (Show)
 instance Exception MyException 
@@ -43,7 +43,7 @@ runit conf mpvState =
     --TODO if file doesn't exist, doesn't report an error
     loadFiles ctx (singleArgs (mpvArgs conf))
     putStrLn "loaded files"
-    runReaderT (eventLoop mpvState) (ML.MLEnv ctx 1.0) 
+    runReaderT (eventLoop mpvState) (MLEnv ctx 1.0) 
     putStrLn "finished event loop"
     mpvTerminateDestroy ctx -- this should be in some sort of failsafe (like java finally)
     return ()
@@ -57,7 +57,7 @@ main =
                  Right c -> return c
     srtArrays <- doMonadOnList (subfiles c) loadSrtFileAndPrintErrors
     let loopArrays = createLoopArrays srtArrays (tracks c)
-        mpvState = ML.createInitialMpvState (sortLoopsForPlay loopArrays)
+        mpvState = createInitialMpvState (sortLoopsForPlay loopArrays)
     runit c mpvState
   where
     loadSrtFileAndPrintErrors :: String -> IO [Srt]

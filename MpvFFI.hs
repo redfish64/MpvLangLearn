@@ -2,7 +2,7 @@
 
 -- :set -lmpv
 
-module MpvLL (mpvCreate,
+module MpvFFI (mpvCreate,
               mpvSetOptionString,
               mpvSetOptionFlag,
               mpvSetOptionDouble,
@@ -28,19 +28,28 @@ import MpvStructs
 import Control.Exception
 --import Data.Typeable
 import Util
-import Control.Monad.Trans.Either
+import Control.Monad.Reader
 
-data MpvException = MpvException
+data MpvFFIException = MpvFFIException String
     deriving (Show)
 --    deriving (Show, Typeable)
 
-instance Exception MpvException
+instance Exception MpvFFIException
 
 type Ctx = Ptr ()
 type Event = ()
 
-type MpvLLM x = EitherT (IO (Either MpvError x))
+data MpvFFIEnv = MpvFFIEnv {
+  --called whenever an mpv error occurs
+  errorFunc :: Call -> MpvError -> MFM ()
+  }
 
+type MFM = ReaderT MpvFFIEnv IO
+
+data Call = CMpvCreate | CMpvInitialize | CMpvTerminateDestroy | CMpvSetOptionString
+          | CMpvSetPropertyString | CMpvSetOption | CMpvSetProperty
+          | CMpvCommand | CSetMultipleSubfiles | CMpvWaitEvent
+          | CMpvGetProperty
 
 foreign import ccall unsafe "mpv/client.h mpv_create"
         c_mpv_create :: IO Ctx
@@ -84,21 +93,22 @@ foreign import ccall unsafe "mpv/client.h mpv_get_property"
         c_mpv_get_property :: Ctx -> CString -> CInt -> (Ptr ()) -> IO CInt
 
 --if func returns true, throws an exception
-throw_mpve_on :: Show a => IO a -> (a -> Bool) -> IO a
+throw_mpve_on :: Show a => IO a -> (a -> Maybe String) -> IO a
 throw_mpve_on iv f =
   do
     v <- iv
     case (f v) of
-      True -> --throw MpvException
-              do putStrLn("Exception! "++(show v))
-                 return v
-      False -> return v
+      Just m -> throw $ MpvFFIException m
+              -- do putStrLn("Exception! "++(show v))
+              --    return v
+      Nothing -> return v
 
 --checks for mpv status and throws exception if fails (if status is less than zero)
 check_mpv_status :: IO CInt -> IO CInt
-check_mpv_status iv = throw_mpve_on iv (\v -> v < 0)
+check_mpv_status iv = undefined --throw_mpve_on iv (\v -> v < 0)
 
-mpvCreate = throw_mpve_on c_mpv_create $ (==) nullPtr
+mpvCreate = throw_mpve_on c_mpv_create $ (\v -> if v == nullPtr then Just "NPE when calling mpv_create" else Nothing)
+
 
 mpvSetOptionString ctx name value =
   do

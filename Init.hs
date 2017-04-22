@@ -1,7 +1,7 @@
 module Init where
 
 import System.Environment
-import MpvLL
+import MpvFFI
 import Control.Monad.State
 import Data.List.Split (splitOn)
 import Data.List (isPrefixOf,elemIndex)

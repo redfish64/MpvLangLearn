@@ -1,7 +1,9 @@
 --handles controlling the mpv library on behalf of the event loops
-module MpvLoops where
+module MpvLoops (createInitialMpvState,
+                 MLEnv(..)
+                ) where
 
-import qualified MpvLL as M
+import qualified MpvFFI as M
 import qualified MpvStructs as MS
 import Foreign (Ptr,peek)
 import qualified EventLoop as EL

@@ -1,13 +1,13 @@
 
 MAIN_FILE=Main.hs
-HS_FILES=Main.hs Init.hs MpvStructs.hs SrtFile.hs Loops.hs MpvLL.hs Util.hs EventLoop.hs MpvLoops.hs
+HS_FILES=Main.hs Init.hs MpvStructs.hs SrtFile.hs Loops.hs MpvFFI.hs Util.hs EventLoop.hs MpvLoops.hs
 CFLAGS=-lmpv
 DEBUG=-g
 GHC=ghc
 default: MpvLL
 
 clean:
-	rm -f *.o MpvStructs.hs MpvLL
+	rm -f *.o MpvStructs.hs *.hi MpvLL
 
 tags:   $(HS_FILES) MpvStructs.hsc
 	hasktags -L .
