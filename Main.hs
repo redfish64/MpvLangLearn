@@ -33,11 +33,11 @@ runit conf mpvState =
     mpv_set_option_string ctx "input-default-bindings" "yes"
     mpv_set_option_string ctx "input-vo-keyboard" "yes"
     mpv_set_option_flag ctx "osc" 1
-    putStrLn "set flags for subfiles"
-    recurseMonad (subfiles conf) (\sf -> mpv_set_option_string ctx "sub-file" sf )
+    putStrLn $ "set flags for subfiles "++(show (subfiles conf))
     putStrLn "set options"
     setupMpvFlags ctx (flags (mpvArgs conf))
     setupMpvOptions ctx (opts (mpvArgs conf))
+    set_multiple_subfiles ctx (subfiles conf)
     mpv_initialize ctx
     putStrLn "initialized"
     --TODO if file doesn't exist, doesn't report an error

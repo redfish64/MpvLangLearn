@@ -53,6 +53,9 @@ foreign import ccall unsafe "mpv/client.h mpv_set_property"
 foreign import ccall unsafe "mpv/client.h mpv_command"
         c_mpv_command :: (Ptr Ctx) -> (Ptr CString) -> IO CInt
 
+foreign import ccall unsafe "foo.h set_multiple_subfiles"
+        c_set_multiple_subfiles :: (Ptr Ctx) -> CInt -> (Ptr CString) -> IO CInt
+
 foreign import ccall unsafe "mpv/client.h mpv_wait_event"
         c_mpv_wait_event :: (Ptr Ctx) -> CDouble -> IO (Ptr MpvEvent)
 
@@ -81,6 +84,7 @@ mpv_create = throw_mpve_on c_mpv_create $ (==) nullPtr
 
 mpv_set_option_string ctx name value =
   do
+    putStrLn $ "mpv_set_option_string "++name ++ " " ++ value
     withCString name
        (\cname ->
          withCString value
@@ -131,6 +135,7 @@ mpv_set_property_double ctx name v =
 
 mpv_set_property_string ctx name value =
   do
+    putStrLn $ "mpv_set_property_string "++name ++ " " ++ value
     withCString name
        (\cname ->
          withCString value
@@ -200,7 +205,17 @@ mpv_command :: Ptr Ctx -> [ String ] -> IO CInt
 mpv_command ctx array =
   marshall_cstring_array0 array
     (\cstr_arr ->
-       (check_mpv_status (c_mpv_command ctx cstr_arr)))
+       do
+         putStrLn $ "mpv_command: "++ show array
+         (check_mpv_status (c_mpv_command ctx cstr_arr)))
+
+set_multiple_subfiles :: Ptr Ctx -> [ String ] -> IO CInt                 
+set_multiple_subfiles ctx array =
+  marshall_cstring_array0 array --TODO nullptr at end not needed
+    (\cstr_arr ->
+       do
+         putStrLn $ "set_multiple_subfiles: "++ show array
+         (check_mpv_status (c_set_multiple_subfiles ctx (fromIntegral (length array)) cstr_arr)))
 
 loadFiles :: Ptr Ctx -> [String] -> IO ()
 loadFiles ctx xs = recurseMonad xs (\x -> mpv_command ctx ["loadfile",x] >> return ())

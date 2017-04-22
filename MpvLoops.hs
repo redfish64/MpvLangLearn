@@ -45,6 +45,7 @@ defaultNoSrtAction =
   do
     env <- ask
     setSpeed (defaultNoSrtSpeed env)
+    setSids []
 
 readDouble :: String -> MLM (Maybe Double)
 readDouble name =
