@@ -1,4 +1,4 @@
-module EventLoop (eventLoop,createEventLoop,EventLoop,speed,sids,createInitialELState) where
+module EventLoop (eventLoop,createEventLoop,EventLoop,speed,sids,createInitialELState, ELState(..)) where
 
 import Control.Monad.State
 import Loops

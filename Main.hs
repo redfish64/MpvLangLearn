@@ -18,33 +18,34 @@ import MpvStructs
 import EventLoop
 import Util
 import Loops (sortLoopsForPlay)
-import Control.Monad.Reader (runReaderT)
+import Control.Monad.Reader (runReaderT,liftIO)
 import MpvLoops 
 
 data MyException = MyException String deriving (Show)
 instance Exception MyException 
 
 
-     
+
+runit :: Conf -> ELState MLM -> MFM ()         
 runit conf mpvState = 
   do
     ctx <- mpvCreate
-    putStrLn "created context"
+    liftIO $ putStrLn "created context"
     mpvSetOptionString ctx "input-default-bindings" "yes"
     mpvSetOptionString ctx "input-vo-keyboard" "yes"
     mpvSetOptionFlag ctx "osc" 1
-    putStrLn $ "set flags for subfiles "++(show (subfiles conf))
-    putStrLn "set options"
+    liftIO $ putStrLn $ "set flags for subfiles "++(show (subfiles conf))
+    liftIO $ putStrLn "set options"
     setupMpvFlags ctx (flags (mpvArgs conf))
     setupMpvOptions ctx (opts (mpvArgs conf))
     setMultipleSubfiles ctx (subfiles conf)
     mpvInitialize ctx
-    putStrLn "initialized"
+    liftIO $ putStrLn "initialized"
     --TODO if file doesn't exist, doesn't report an error
     loadFiles ctx (singleArgs (mpvArgs conf))
-    putStrLn "loaded files"
+    liftIO $ putStrLn "loaded files"
     runReaderT (eventLoop mpvState) (MLEnv ctx 1.0) 
-    putStrLn "finished event loop"
+    liftIO $ putStrLn "finished event loop"
     mpvTerminateDestroy ctx -- this should be in some sort of failsafe (like java finally)
     return ()
 
@@ -58,8 +59,10 @@ main =
     srtArrays <- doMonadOnList (subfiles c) loadSrtFileAndPrintErrors
     let loopArrays = createLoopArrays srtArrays (tracks c)
         mpvState = createInitialMpvState (sortLoopsForPlay loopArrays)
-    runit c mpvState
+    runReaderT (runit c mpvState) (MpvFFIEnv errorFunc)
   where
+    errorFunc call mpvError = lift $ putStrLn $
+      printf "Error: call %s, status %s" (show call) (show mpvError)
     loadSrtFileAndPrintErrors :: String -> IO [Srt]
     loadSrtFileAndPrintErrors f =
       do

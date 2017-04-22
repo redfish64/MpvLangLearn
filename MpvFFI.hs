@@ -16,7 +16,10 @@ module MpvFFI (mpvCreate,
               mpvTerminateDestroy,
               setMultipleSubfiles,
               loadFiles,
-              Ctx)
+              MFM,
+              MpvFFIEnv(..),
+              Ctx,
+              event_id)
               where
 
 import Foreign
@@ -24,11 +27,12 @@ import Foreign.C.Types
 import Foreign.C.String
 import Foreign.Marshal.Alloc
 import MpvStructs
-
+import Text.Printf
 import Control.Exception
 --import Data.Typeable
 import Util
 import Control.Monad.Reader
+import Data.Either
 
 data MpvFFIException = MpvFFIException String
     deriving (Show)
@@ -47,9 +51,10 @@ data MpvFFIEnv = MpvFFIEnv {
 type MFM = ReaderT MpvFFIEnv IO
 
 data Call = CMpvCreate | CMpvInitialize | CMpvTerminateDestroy | CMpvSetOptionString
-          | CMpvSetPropertyString | CMpvSetOption | CMpvSetProperty
+          | CMpvSetPropertyString | CMpvSetProperty
           | CMpvCommand | CSetMultipleSubfiles | CMpvWaitEvent
-          | CMpvGetProperty
+          | CMpvGetProperty | CMpvSetOption
+          deriving (Show,Eq)
 
 foreign import ccall unsafe "mpv/client.h mpv_create"
         c_mpv_create :: IO Ctx
@@ -103,81 +108,107 @@ throw_mpve_on iv f =
               --    return v
       Nothing -> return v
 
---checks for mpv status and throws exception if fails (if status is less than zero)
-check_mpv_status :: IO CInt -> IO CInt
-check_mpv_status iv = undefined --throw_mpve_on iv (\v -> v < 0)
 
-mpvCreate = throw_mpve_on c_mpv_create $ (\v -> if v == nullPtr then Just "NPE when calling mpv_create" else Nothing)
+mpvCreate :: MFM Ctx
+mpvCreate =
+  lift $ throw_mpve_on c_mpv_create $ (\v -> if v == nullPtr then Just "NPE when calling mpv_create" else Nothing)
 
+handleError :: Call -> CInt -> MFM MpvError
+handleError call ec =
+  do
+    let err = MpvError ec
+    if ec < 0 then
+      do
+        env <- ask
+        errorFunc env call err
+        return err
+    else
+        return err
 
+withCStringCString :: String -> String -> (CString -> CString -> IO x) -> IO x
+withCStringCString a b f=
+         withCString a
+             (\ca ->
+                     withCString b
+                          (\cb ->
+                             f ca cb))
+
+mpvSetOptionString :: Ctx -> String -> String -> MFM MpvError
 mpvSetOptionString ctx name value =
   do
-    putStrLn $ "mpv_set_option_string "++name ++ " " ++ value
-    withCString name
-       (\cname ->
-         withCString value
-           (\cvalue ->
-              (check_mpv_status (c_mpv_set_option_string ctx cname cvalue))))
+    error <- lift $
+      withCStringCString name value (c_mpv_set_option_string ctx)
+    handleError CMpvSetOptionString error
               
+              
+mpvSetOptionFlag :: Ctx -> String -> Int -> MFM MpvError
 mpvSetOptionFlag ctx name v =
   do
-    withCString name
+    error <- lift $ withCString name
        (\cname ->
           alloca
             ((\value ->
                do
-                 poke value v
+                 poke value (fromIntegral v)
                  voidvalue <- return (castPtr value)
                  --3 == MPV_FORMAT_FLAG TODO: put in enum
-                 check_mpv_status (c_mpv_set_option ctx cname 3 voidvalue)) :: (Ptr CInt -> IO CInt))
+                 c_mpv_set_option ctx cname 3 voidvalue) :: (Ptr CInt -> IO CInt))
             
        )
+    handleError CMpvSetOption error
+       
 
+
+mpvSetOptionDouble :: Ctx -> String -> Double -> MFM MpvError
 mpvSetOptionDouble ctx name v =
   do
-    withCString name
+    error <- lift $ withCString name
        (\cname ->
           alloca
             ((\value ->
                do
-                 poke value v
+                 poke value (realToFrac v)
                  voidvalue <- return (castPtr value)
                  --5 == MPV_FORMAT_DOUBLE TODO: put in enum
-                 check_mpv_status (c_mpv_set_option ctx cname 5 voidvalue)) :: (Ptr CDouble -> IO CInt))
+                 c_mpv_set_option ctx cname 5 voidvalue) :: (Ptr CDouble -> IO CInt))
             
        )
+    handleError CMpvSetOption error
 
+mpvSetPropertyDouble :: Ctx -> String -> Double -> MFM MpvError
 mpvSetPropertyDouble ctx name v =
   do
-    withCString name
+    error <- lift $ withCString name
        (\cname ->
           alloca
             ((\value ->
                do
-                 poke value v
+                 poke value (realToFrac v)
                  voidvalue <- return (castPtr value)
                  --5 == MPV_FORMAT_DOUBLE TODO: put in enum
-                 check_mpv_status (c_mpv_set_property ctx cname 5 voidvalue)) :: (Ptr CDouble -> IO CInt))
+                 c_mpv_set_property ctx cname 5 voidvalue) :: (Ptr CDouble -> IO CInt))
             
        )
+    handleError CMpvSetProperty error
 
+mpvSetPropertyString :: Ctx -> String -> String -> MFM MpvError
 mpvSetPropertyString ctx name value =
   do
-    putStrLn $ "mpv_set_property_string "++name ++ " " ++ value
-    withCString name
+    --putStrLn $ "mpv_set_property_string "++name ++ " " ++ value
+    error <- lift $ withCString name
        (\cname ->
          withCString value
            (\cvalue ->
-              (check_mpv_status (c_mpv_set_property_string ctx cname cvalue))))
-              
+              c_mpv_set_property_string ctx cname cvalue))
+    handleError CMpvSetPropertyString error
 
 
 --gets a property
 --Ex. "time-pos"  position in current file in seconds
-mpvGetPropertyDouble :: Ctx -> String -> IO (Maybe CDouble)
+mpvGetPropertyDouble :: Ctx -> String -> MFM (Either MpvError Double)
 mpvGetPropertyDouble ctx name =
   do
-    withCString name
+    errorOrResult <- lift $ withCString name
        (\cname ->
           alloca
             ((\value ->
@@ -187,28 +218,35 @@ mpvGetPropertyDouble ctx name =
                  status <- c_mpv_get_property ctx cname 5 voidvalue
                  if status < 0
                  then
-                   return Nothing
+                   return $ Left status
                  else
-                   ((peek value) >>= return . Just)
-             ) :: (Ptr CDouble -> IO (Maybe CDouble)))
+                   ((peek value) >>= return . Right)
+             ) :: (Ptr CDouble -> IO (Either CInt CDouble)))
             
        )
+    case errorOrResult of
+         Left error -> handleError CMpvGetProperty (fromIntegral error)
+                         >>= (return . Left)
+         Right res -> return $ Right (realToFrac res)
                        
-setupMpvFlags :: Ctx -> [String] -> IO ()
+setupMpvFlags :: Ctx -> [String] -> MFM ()
 setupMpvFlags ctx xs = recurseMonad xs (\x -> mpvSetOptionFlag ctx x 1 >> return ())
   
 
-setupMpvOptions :: Ctx -> [(String,String)] -> IO ()
+setupMpvOptions :: Ctx -> [(String,String)] -> MFM ()
 setupMpvOptions ctx xs = recurseMonad xs (\(x,y) -> mpvSetOptionString ctx x y >> return ())
 
 
        
 
-mpvInitialize ctx = check_mpv_status (c_mpv_initialize ctx)
+mpvInitialize :: Ctx -> MFM MpvError
+mpvInitialize ctx = lift (c_mpv_initialize ctx) >>= handleError CMpvInitialize 
 
-mpvWaitEvent = c_mpv_wait_event
+mpvWaitEvent :: Ctx -> Double -> MFM (Ptr MpvEvent)
+mpvWaitEvent ctx waitTime = lift $ c_mpv_wait_event ctx (realToFrac waitTime)
 
-mpvTerminateDestroy = c_mpv_terminate_destroy
+mpvTerminateDestroy :: Ctx -> MFM ()
+mpvTerminateDestroy ctx = lift $ c_mpv_terminate_destroy ctx
     
 
 --marshalls a list of strings into a c-array of c-strings and deallocates them after
@@ -229,53 +267,65 @@ marshallCstringArray0 array func =
         (\cs -> allocStringsAndRunFunc sa (cs : cstr_array) func ptr)
         
 
-mpvCommand :: Ctx -> [ String ] -> IO CInt                 
+mpvCommand :: Ctx -> [ String ] -> MFM MpvError            
 mpvCommand ctx array =
-  marshallCstringArray0 array
-    (\cstr_arr ->
+  do
+    error <- lift $ marshallCstringArray0 array
+                      (\cstr_arr ->
        do
          putStrLn $ "mpv_command: "++ show array
-         (check_mpv_status (c_mpv_command ctx cstr_arr)))
+         c_mpv_command ctx cstr_arr)
+    handleError CMpvCommand error
 
-setMultipleSubfiles :: Ctx -> [ String ] -> IO CInt                 
+setMultipleSubfiles :: Ctx -> [ String ] -> MFM MpvError
 setMultipleSubfiles ctx array =
-  marshallCstringArray0 array --TODO nullptr at end not needed
-    (\cstr_arr ->
+  do
+    error <- lift $ marshallCstringArray0 array --TODO nullptr at end not needed
+      (\cstr_arr ->
        do
          putStrLn $ "set_multiple_subfiles: "++ show array
-         (check_mpv_status (c_set_multiple_subfiles ctx (fromIntegral (length array)) cstr_arr)))
+         c_set_multiple_subfiles ctx (fromIntegral (length array)) cstr_arr)
+    handleError CSetMultipleSubfiles error
 
-loadFiles :: Ctx -> [String] -> IO ()
+loadFiles :: Ctx -> [String] -> MFM ()
 loadFiles ctx xs = recurseMonad xs (\x -> mpvCommand ctx ["loadfile",x] >> return ())
           
 
 playMovie :: String -> IO ()
 playMovie filename =
-  do
-    --lift some mpv context, since each command may return an error
-    ctx <- mpvCreate
-    putStrLn "created context"
-    mpvSetOptionString ctx "input-default-bindings" "yes"
-    mpvSetOptionString ctx "input-vo-keyboard" "yes"
-    mpvSetOptionFlag ctx "osc" 1
-    putStrLn "set options"
-    putStrLn $ "ctx = " ++ (show ctx)
-    mpvInitialize ctx
-    putStrLn "initialized"
-    mpvCommand ctx ["loadfile",filename]
-    putStrLn "loaded file"
-    eventLoop ctx
-    putStrLn "finished event loop"
-    mpvTerminateDestroy ctx -- this should be in some sort of failsafe (like java finally)
-    return ()
+  runReaderT playMovie1 (MpvFFIEnv errorFunc)
   where
-   eventLoop :: Ctx -> IO ()
-   eventLoop ctx =
+    playMovie1 :: MFM ()
+    playMovie1 =
       do
-        event <- (mpvWaitEvent ctx 1) >>= peek 
-        putStrLn ("mpv_wait_event: " ++ (show (event_id event)))
+        --lift some mpv context, since each command may return an error
+        ctx <- mpvCreate
+        lift $ putStrLn "created context"
+        mpvSetOptionString ctx "input-default-bindings" "yes"
+        mpvSetOptionString ctx "input-vo-keyboard" "yes"
+        mpvSetOptionFlag ctx "osc" 1
+        lift $ putStrLn "set options"
+        lift $ putStrLn $ "ctx = " ++ (show ctx)
+        mpvInitialize ctx
+        lift $ putStrLn "initialized"
+        mpvCommand ctx ["loadfile",filename]
+        lift $ putStrLn "loaded file"
+        eventLoop ctx
+        lift $ putStrLn "finished event loop"
+        mpvTerminateDestroy ctx -- this should be in some sort of failsafe (like java finally)
+        return ()
+    errorFunc :: Call -> MpvError -> MFM ()
+    errorFunc call mpvError = lift $ putStrLn $
+      printf "Error: call %s, status %s" (show call) (show mpvError)
+                   
+    eventLoop :: Ctx -> MFM ()
+    eventLoop ctx =
+      do
+        event <- (mpvWaitEvent ctx 1) >>= (lift . peek )
+        lift $ putStrLn ("mpv_wait_event: " ++ (show (event_id event)))
         time <- mpvGetPropertyDouble ctx "time-pos"
-        putStrLn ("time: " ++ (show time))
+        lift $ putStrLn ("time: " ++ (show time))
+        lift $ putStrLn ("event id: " ++ (show $ event_id event))
         case (event_id event) of
           id | id == mpvEventShutdown  -> return ()
           _ -> (eventLoop ctx)
