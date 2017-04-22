@@ -2,7 +2,22 @@
 
 -- :set -lmpv
 
-module MpvLL where
+module MpvLL (mpvCreate,
+              mpvSetOptionString,
+              mpvSetOptionFlag,
+              mpvSetOptionDouble,
+              mpvSetPropertyDouble,
+              mpvSetPropertyString,
+              mpvGetPropertyDouble,
+              setupMpvFlags,
+              setupMpvOptions,
+              mpvInitialize,
+              mpvWaitEvent,
+              mpvTerminateDestroy,
+              setMultipleSubfiles,
+              loadFiles,
+              Ctx)
+              where
 
 import Foreign
 import Foreign.C.Types
@@ -13,6 +28,7 @@ import MpvStructs
 import Control.Exception
 --import Data.Typeable
 import Util
+import Control.Monad.Trans.Either
 
 data MpvException = MpvException
     deriving (Show)
@@ -20,50 +36,52 @@ data MpvException = MpvException
 
 instance Exception MpvException
 
-type Ctx = ()
+type Ctx = Ptr ()
 type Event = ()
 
+type MpvLLM x = EitherT (IO (Either MpvError x))
+
+
 foreign import ccall unsafe "mpv/client.h mpv_create"
-        c_mpv_create :: IO (Ptr Ctx)
+        c_mpv_create :: IO Ctx
 
 foreign import ccall unsafe "mpv/client.h mpv_initialize"
---foreign import ccall unsafe "mpv/client.h fakeout"
-        c_mpv_initialize :: Ptr Ctx -> IO CInt
+        c_mpv_initialize :: Ctx -> IO CInt
 
 foreign import ccall unsafe "mpv/client.h mpv_terminate_destroy"
-        c_mpv_terminate_destroy :: Ptr Ctx -> IO ()
+        c_mpv_terminate_destroy :: Ctx -> IO ()
 
 foreign import ccall unsafe "mpv/client.h mpv_set_option_string"
-        c_mpv_set_option_string :: (Ptr Ctx) -> CString -> CString -> IO CInt
+        c_mpv_set_option_string :: Ctx -> CString -> CString -> IO CInt
 
 foreign import ccall unsafe "mpv/client.h mpv_set_property_string"
-        c_mpv_set_property_string :: (Ptr Ctx) -> CString -> CString -> IO CInt
+        c_mpv_set_property_string :: Ctx -> CString -> CString -> IO CInt
 
  -- * @param name Option name. This is the same as on the mpv command line, but
  -- *             without the leading "--".
  -- * @param format see enum mpv_format.
  -- * @param[in] data Option value (according to the format).
 foreign import ccall unsafe "mpv/client.h mpv_set_option"
-        c_mpv_set_option :: (Ptr Ctx) -> CString -> CInt -> (Ptr ()) -> IO CInt
+        c_mpv_set_option :: Ctx -> CString -> CInt -> (Ptr ()) -> IO CInt
 
 foreign import ccall unsafe "mpv/client.h mpv_set_property"
-        c_mpv_set_property :: (Ptr Ctx) -> CString -> CInt -> (Ptr ()) -> IO CInt
+        c_mpv_set_property :: Ctx -> CString -> CInt -> (Ptr ()) -> IO CInt
 
 --Ptr CString must be a null terminated array of strings
 foreign import ccall unsafe "mpv/client.h mpv_command"
-        c_mpv_command :: (Ptr Ctx) -> (Ptr CString) -> IO CInt
+        c_mpv_command :: Ctx -> (Ptr CString) -> IO CInt
 
 foreign import ccall unsafe "foo.h set_multiple_subfiles"
-        c_set_multiple_subfiles :: (Ptr Ctx) -> CInt -> (Ptr CString) -> IO CInt
+        c_set_multiple_subfiles :: Ctx -> CInt -> (Ptr CString) -> IO CInt
 
 foreign import ccall unsafe "mpv/client.h mpv_wait_event"
-        c_mpv_wait_event :: (Ptr Ctx) -> CDouble -> IO (Ptr MpvEvent)
+        c_mpv_wait_event :: Ctx -> CDouble -> IO (Ptr MpvEvent)
 
 -- foreign import ccall unsafe "mpv/client.h mpv_observe_property"
---         c_mpv_observe_property (Ptr Ctx) -> CInt -> CInt -> IO CInt
+--         c_mpv_observe_property Ctx -> CInt -> CInt -> IO CInt
 
 foreign import ccall unsafe "mpv/client.h mpv_get_property"
-        c_mpv_get_property :: (Ptr Ctx) -> CString -> CInt -> (Ptr ()) -> IO CInt
+        c_mpv_get_property :: Ctx -> CString -> CInt -> (Ptr ()) -> IO CInt
 
 --if func returns true, throws an exception
 throw_mpve_on :: Show a => IO a -> (a -> Bool) -> IO a
@@ -80,9 +98,9 @@ throw_mpve_on iv f =
 check_mpv_status :: IO CInt -> IO CInt
 check_mpv_status iv = throw_mpve_on iv (\v -> v < 0)
 
-mpv_create = throw_mpve_on c_mpv_create $ (==) nullPtr
+mpvCreate = throw_mpve_on c_mpv_create $ (==) nullPtr
 
-mpv_set_option_string ctx name value =
+mpvSetOptionString ctx name value =
   do
     putStrLn $ "mpv_set_option_string "++name ++ " " ++ value
     withCString name
@@ -91,7 +109,7 @@ mpv_set_option_string ctx name value =
            (\cvalue ->
               (check_mpv_status (c_mpv_set_option_string ctx cname cvalue))))
               
-mpv_set_option_flag ctx name v =
+mpvSetOptionFlag ctx name v =
   do
     withCString name
        (\cname ->
@@ -105,7 +123,7 @@ mpv_set_option_flag ctx name v =
             
        )
 
-mpv_set_option_double ctx name v =
+mpvSetOptionDouble ctx name v =
   do
     withCString name
        (\cname ->
@@ -119,7 +137,7 @@ mpv_set_option_double ctx name v =
             
        )
 
-mpv_set_property_double ctx name v =
+mpvSetPropertyDouble ctx name v =
   do
     withCString name
        (\cname ->
@@ -133,7 +151,7 @@ mpv_set_property_double ctx name v =
             
        )
 
-mpv_set_property_string ctx name value =
+mpvSetPropertyString ctx name value =
   do
     putStrLn $ "mpv_set_property_string "++name ++ " " ++ value
     withCString name
@@ -146,8 +164,8 @@ mpv_set_property_string ctx name value =
 
 --gets a property
 --Ex. "time-pos"  position in current file in seconds
-mpv_get_property_double :: (Ptr Ctx) -> String -> IO (Maybe CDouble)
-mpv_get_property_double ctx name =
+mpvGetPropertyDouble :: Ctx -> String -> IO (Maybe CDouble)
+mpvGetPropertyDouble ctx name =
   do
     withCString name
        (\cname ->
@@ -166,27 +184,27 @@ mpv_get_property_double ctx name =
             
        )
                        
-setupMpvFlags :: Ptr Ctx -> [String] -> IO ()
-setupMpvFlags ctx xs = recurseMonad xs (\x -> mpv_set_option_flag ctx x 1 >> return ())
+setupMpvFlags :: Ctx -> [String] -> IO ()
+setupMpvFlags ctx xs = recurseMonad xs (\x -> mpvSetOptionFlag ctx x 1 >> return ())
   
 
-setupMpvOptions :: Ptr Ctx -> [(String,String)] -> IO ()
-setupMpvOptions ctx xs = recurseMonad xs (\(x,y) -> mpv_set_option_string ctx x y >> return ())
+setupMpvOptions :: Ctx -> [(String,String)] -> IO ()
+setupMpvOptions ctx xs = recurseMonad xs (\(x,y) -> mpvSetOptionString ctx x y >> return ())
 
 
        
 
-mpv_initialize ctx = check_mpv_status (c_mpv_initialize ctx)
+mpvInitialize ctx = check_mpv_status (c_mpv_initialize ctx)
 
-mpv_wait_event = c_mpv_wait_event
+mpvWaitEvent = c_mpv_wait_event
 
-mpv_terminate_destroy = mpv_terminate_destroy
+mpvTerminateDestroy = c_mpv_terminate_destroy
     
 
 --marshalls a list of strings into a c-array of c-strings and deallocates them after
 --running the function
-marshall_cstring_array0 :: [ String ] -> (Ptr CString -> IO x) -> IO x
-marshall_cstring_array0 array func =
+marshallCstringArray0 :: [ String ] -> (Ptr CString -> IO x) -> IO x
+marshallCstringArray0 array func =
   allocaArray0 (Prelude.length array)
        (allocStringsAndRunFunc array [] func) --partial application  
   where
@@ -201,53 +219,53 @@ marshall_cstring_array0 array func =
         (\cs -> allocStringsAndRunFunc sa (cs : cstr_array) func ptr)
         
 
-mpv_command :: Ptr Ctx -> [ String ] -> IO CInt                 
-mpv_command ctx array =
-  marshall_cstring_array0 array
+mpvCommand :: Ctx -> [ String ] -> IO CInt                 
+mpvCommand ctx array =
+  marshallCstringArray0 array
     (\cstr_arr ->
        do
          putStrLn $ "mpv_command: "++ show array
          (check_mpv_status (c_mpv_command ctx cstr_arr)))
 
-set_multiple_subfiles :: Ptr Ctx -> [ String ] -> IO CInt                 
-set_multiple_subfiles ctx array =
-  marshall_cstring_array0 array --TODO nullptr at end not needed
+setMultipleSubfiles :: Ctx -> [ String ] -> IO CInt                 
+setMultipleSubfiles ctx array =
+  marshallCstringArray0 array --TODO nullptr at end not needed
     (\cstr_arr ->
        do
          putStrLn $ "set_multiple_subfiles: "++ show array
          (check_mpv_status (c_set_multiple_subfiles ctx (fromIntegral (length array)) cstr_arr)))
 
-loadFiles :: Ptr Ctx -> [String] -> IO ()
-loadFiles ctx xs = recurseMonad xs (\x -> mpv_command ctx ["loadfile",x] >> return ())
+loadFiles :: Ctx -> [String] -> IO ()
+loadFiles ctx xs = recurseMonad xs (\x -> mpvCommand ctx ["loadfile",x] >> return ())
           
 
-play_movie :: String -> IO ()
-play_movie filename =
+playMovie :: String -> IO ()
+playMovie filename =
   do
     --lift some mpv context, since each command may return an error
-    ctx <- mpv_create
+    ctx <- mpvCreate
     putStrLn "created context"
-    mpv_set_option_string ctx "input-default-bindings" "yes"
-    mpv_set_option_string ctx "input-vo-keyboard" "yes"
-    mpv_set_option_flag ctx "osc" 1
+    mpvSetOptionString ctx "input-default-bindings" "yes"
+    mpvSetOptionString ctx "input-vo-keyboard" "yes"
+    mpvSetOptionFlag ctx "osc" 1
     putStrLn "set options"
     putStrLn $ "ctx = " ++ (show ctx)
-    mpv_initialize ctx
+    mpvInitialize ctx
     putStrLn "initialized"
-    mpv_command ctx ["loadfile",filename]
+    mpvCommand ctx ["loadfile",filename]
     putStrLn "loaded file"
-    event_loop ctx
+    eventLoop ctx
     putStrLn "finished event loop"
-    mpv_terminate_destroy ctx -- this should be in some sort of failsafe (like java finally)
+    mpvTerminateDestroy ctx -- this should be in some sort of failsafe (like java finally)
     return ()
   where
-   event_loop :: Ptr Ctx -> IO ()
-   event_loop ctx =
+   eventLoop :: Ctx -> IO ()
+   eventLoop ctx =
       do
-        event <- (mpv_wait_event ctx 1) >>= peek 
+        event <- (mpvWaitEvent ctx 1) >>= peek 
         putStrLn ("mpv_wait_event: " ++ (show (event_id event)))
-        time <- mpv_get_property_double ctx "time-pos"
+        time <- mpvGetPropertyDouble ctx "time-pos"
         putStrLn ("time: " ++ (show time))
         case (event_id event) of
           id | id == mpvEventShutdown  -> return ()
-          _ -> (event_loop ctx)
+          _ -> (eventLoop ctx)

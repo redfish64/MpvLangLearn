@@ -8,7 +8,7 @@ import qualified EventLoop as EL
 import Control.Monad.Reader
 import Loops
 
-data MLEnv = MLEnv { ctx :: Ptr M.Ctx,
+data MLEnv = MLEnv { ctx :: M.Ctx,
                        defaultNoSrtSpeed :: Double
                      }
 
@@ -20,7 +20,7 @@ setSpeed speed =
   do 
     lift $ putStrLn $ "setSpeed: "++(show speed)
     env <- ask
-    lift $ M.mpv_set_property_double (ctx env) "speed" (realToFrac speed)
+    lift $ M.mpvSetPropertyDouble (ctx env) "speed" (realToFrac speed)
     lift $ putStrLn $ "done setSpeed: "++(show speed)
     return ()
 
@@ -35,8 +35,8 @@ setSids sids =
                           x1 : x2 : _ -> (show x1, show x2)
     lift $ putStrLn $ "setSids " ++ (show (sid,ssid))
     lift $ do
-                M.mpv_set_property_string (ctx env) "sid" sid
-                M.mpv_set_property_string (ctx env) "secondary-sid" ssid
+                M.mpvSetPropertyString (ctx env) "sid" sid
+                M.mpvSetPropertyString (ctx env) "secondary-sid" ssid
     return ()
 
 
@@ -52,7 +52,7 @@ readDouble name =
   do
 --    lift $ putStrLn $ "readDouble: "++name
     env <- ask
-    time <- (lift $ M.mpv_get_property_double (ctx env) name)
+    time <- (lift $ M.mpvGetPropertyDouble (ctx env) name)
 --    lift $ putStrLn $ "done readDouble: "++name
     return $ realToFrac <$> time
     
@@ -66,20 +66,20 @@ waitAction :: Double -> MLM Bool
 waitAction time =
   do
     env <- ask
-    event <- lift $ (M.mpv_wait_event (ctx env) (realToFrac time)) >>= peek 
+    event <- lift $ (M.mpvWaitEvent (ctx env) (realToFrac time)) >>= peek 
     --putStrLn ("mpv_wait_event: " ++ (show (event_id event)))
     return $ (MS.event_id event) == MS.mpvEventShutdown 
 
-seekAction :: EL.MpvLoop -> MLM ()
+seekAction :: EL.EventLoop -> MLM ()
 seekAction loop =
   do
     env <- ask
     lift $ putStrLn $ "seeking to " ++ (show (startTime loop))
-    lift $ M.mpv_set_property_double (ctx env) "playback-time" (realToFrac (startTime loop))
+    lift $ M.mpvSetPropertyDouble (ctx env) "playback-time" (realToFrac (startTime loop))
     lift $ putStrLn $ "done seeking to " ++ (show (startTime loop))
     return ()
 
-playAction :: EL.MpvLoop -> MLM ()
+playAction :: EL.EventLoop -> MLM ()
 playAction loop =
   do
     setSpeed (EL.speed (val loop))
@@ -88,7 +88,7 @@ playAction loop =
 
 
 createInitialMpvState loops =
-  EL.createInitialMpvState loops
+  EL.createInitialELState loops
                         defaultNoSrtAction
                         readTimeAction
                         readSpeedAction

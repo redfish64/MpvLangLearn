@@ -13,7 +13,7 @@ import Loops
 import Control.Monad.Trans.Either
 
 import Foreign (Ptr)
-import EventLoop (MpvLoop,createMpvLoop)
+import EventLoop (EventLoop,createEventLoop)
   
 
 data Track = Track { sids :: [Int], speed :: Double, leadSecs :: Double, tailSecs :: Double}
@@ -151,7 +151,7 @@ parseArgs args = do
   return $ Conf subfiles tracks mpvArgs
 
 
-createLoopArraysForTrack :: [[Srt]] -> Track -> [MpvLoop]
+createLoopArraysForTrack :: [[Srt]] -> Track -> [EventLoop]
 createLoopArraysForTrack srtss t =
   let timingSid = 
         case (sids t) of
@@ -159,12 +159,12 @@ createLoopArraysForTrack srtss t =
            x : xs -> x
       srts = srtss !! (timingSid-1)
   in
-    fmap ((\srt -> createMpvLoop ((SF.startTime srt) - (leadSecs t))
+    fmap ((\srt -> createEventLoop ((SF.startTime srt) - (leadSecs t))
                                 ((SF.endTime srt) - (tailSecs t))
-                                (speed t) (sids t)) :: Srt -> MpvLoop)
+                                (speed t) (sids t)) :: Srt -> EventLoop)
          srts
 
-createLoopArrays :: [[Srt]] -> [Track] -> [[MpvLoop]]
+createLoopArrays :: [[Srt]] -> [Track] -> [[EventLoop]]
 createLoopArrays srtss tracks = fmap (createLoopArraysForTrack srtss) tracks
                        
 

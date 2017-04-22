@@ -1,7 +1,7 @@
 module EventLoopTest where
 
 import qualified EventLoop as EL
-import EventLoop (MpvLoop)
+import EventLoop (EventLoop)
 import Control.Monad.RWS
 import Text.Printf
 import Loops
@@ -56,7 +56,7 @@ waitAction1 time = do
       case (waitActionStrategy env) of
         WASLimit limit -> (min (time * (speed st)) limit)
         
-seekAction1 :: MpvLoop -> TestM ()        
+seekAction1 :: EventLoop -> TestM ()        
 seekAction1 loop = do
   st <- get
   modify $ \st -> st { currTime = Just (startTime loop) }
@@ -64,18 +64,18 @@ seekAction1 loop = do
   tlog (printf "seekAction1 %s" (show (currTime newSt)))
   return ()
   
-playAction1 :: MpvLoop -> TestM ()        
+playAction1 :: EventLoop -> TestM ()        
 playAction1 loop = do
   do
     modify $ \st -> st { speed=(EL.speed . val $ loop) , sids = EL.sids . val $ loop }
     tlog "playAction1"
 
-st1 :: EL.MpvState TestM
-st1 = EL.createInitialMpvState loops1 defaultNoSrtAction1 readTimeAction1
+st1 :: EL.ELState TestM
+st1 = EL.createInitialELState loops1 defaultNoSrtAction1 readTimeAction1
                                readSpeedAction1 waitAction1
                                seekAction1 playAction1
 
-loops1 = fmap (\(st,ed,speed,sid) -> EL.createMpvLoop st ed speed sid)
+loops1 = fmap (\(st,ed,speed,sid) -> EL.createEventLoop st ed speed sid)
   [
     (5.0,10.0,1.0, [1])
   , (15.0,25.0,0.95,[1])

@@ -28,25 +28,24 @@ instance Exception MyException
      
 runit conf mpvState = 
   do
-    ctx <- mpv_create
+    ctx <- mpvCreate
     putStrLn "created context"
-    mpv_set_option_string ctx "input-default-bindings" "yes"
-    mpv_set_option_string ctx "input-vo-keyboard" "yes"
-    mpv_set_option_flag ctx "osc" 1
+    mpvSetOptionString ctx "input-default-bindings" "yes"
+    mpvSetOptionString ctx "input-vo-keyboard" "yes"
+    mpvSetOptionFlag ctx "osc" 1
     putStrLn $ "set flags for subfiles "++(show (subfiles conf))
     putStrLn "set options"
     setupMpvFlags ctx (flags (mpvArgs conf))
     setupMpvOptions ctx (opts (mpvArgs conf))
-    set_multiple_subfiles ctx (subfiles conf)
-    mpv_initialize ctx
+    setMultipleSubfiles ctx (subfiles conf)
+    mpvInitialize ctx
     putStrLn "initialized"
     --TODO if file doesn't exist, doesn't report an error
     loadFiles ctx (singleArgs (mpvArgs conf))
     putStrLn "loaded files"
-    runReaderT (event_loop mpvState) (ML.MLEnv ctx 1.0) 
---    event_loop ctx undefined
+    runReaderT (eventLoop mpvState) (ML.MLEnv ctx 1.0) 
     putStrLn "finished event loop"
-    mpv_terminate_destroy ctx -- this should be in some sort of failsafe (like java finally)
+    mpvTerminateDestroy ctx -- this should be in some sort of failsafe (like java finally)
     return ()
 
 main :: IO ()

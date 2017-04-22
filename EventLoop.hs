@@ -1,27 +1,27 @@
-module EventLoop where
+module EventLoop (eventLoop,createEventLoop,EventLoop,speed,sids,createInitialELState) where
 
 import Control.Monad.State
 import Loops
 import Util
 
-data MpvLoopData = MpvLoopData { speed :: Double, sids :: [Int] } deriving (Show)
+data EventLoopData = EventLoopData { speed :: Double, sids :: [Int] } deriving (Show)
 
-type MpvLoop = Loop MpvLoopData
+type EventLoop = Loop EventLoopData
 
-data MpvStatus =
-    MpvStart --begin
-  | MpvInLoop -- loop action run and inside of a loop
-  | MpvOutOfLoop -- defaultNoSrtAction run and outside of loop
-  | MpvEndLoop -- loop finished, and first of nextLoops moved to priorLoops, but
+data ELStatus =
+    ELStart --begin
+  | ELInLoop -- loop action run and inside of a loop
+  | ELOutOfLoop -- defaultNoSrtAction run and outside of loop
+  | ELEndLoop -- loop finished, and first of nextLoops moved to priorLoops, but
                -- next action not run (which would be defaultNoSrtAction or the
                -- next loops action, if outside or inside another loop respectively)
-  | MpvShutdown -- in shutdown state (the user quit)
+  | ELShutdown -- in shutdown state (the user quit)
   deriving (Show, Eq)
 
-data MpvState m = MpvState {
-              priorLoops :: [MpvLoop], --loops already run
-              nextLoops :: [MpvLoop], --loops to run later (or currently running)
-              status :: MpvStatus,
+data ELState m = ELState {
+              priorLoops :: [EventLoop], --loops already run
+              nextLoops :: [EventLoop], --loops to run later (or currently running)
+              status :: ELStatus,
               defaultNoSrtAction :: m (), -- if a loop finishes and there isn't another
                                        -- loop starting, we do this default action here
               readTimeAction :: m (Maybe Double), -- returns the current time. May return nothing
@@ -29,34 +29,34 @@ data MpvState m = MpvState {
               readSpeedAction :: m (Maybe Double), -- returns the current speed.
               waitAction :: Double -> m Bool, -- waits the given period of time (or less)
                                               -- returns true if user requested shutdown
-              seekAction :: MpvLoop -> m (), --action when we need to seek to the start of a loop 
-              playAction :: MpvLoop -> m () --action to play the loop
+              seekAction :: EventLoop -> m (), --action when we need to seek to the start of a loop 
+              playAction :: EventLoop -> m () --action to play the loop
            }
 
-instance Show (MpvState m) where
-  show s = "MpvState { priorLoops="++show(priorLoops s)++", nextLoops="++show(nextLoops s)++", status="++show(status s)++" }"
+instance Show (ELState m) where
+  show s = "ELState { priorLoops="++show(priorLoops s)++", nextLoops="++show(nextLoops s)++", status="++show(status s)++" }"
 
-type MpvM m = StateT (MpvState m) m
+type ELM m = StateT (ELState m) m
 
-createMpvLoop startTime endTime speed sids = Loop (MpvLoopData speed sids) startTime endTime
+createEventLoop startTime endTime speed sids = Loop (EventLoopData speed sids) startTime endTime
 
-event_loop :: Monad m => MpvState m -> m ()
+eventLoop :: Monad m => ELState m -> m ()
 --event_loop = undefined
-event_loop mpvState = runStateT doit mpvState >> return ()
+eventLoop mpvState = runStateT doit mpvState >> return ()
   where
-    waitAndLoop :: Monad m => Double -> StateT (MpvState m) m ()
+    waitAndLoop :: Monad m => Double -> StateT (ELState m) m ()
     waitAndLoop wait_time =
       do
         st <- get
         mspeed <- lift $ (readSpeedAction st)
         let speed = maybeDefault mspeed 1.0
         ifextract (lift $ (waitAction st) $ wait_time/speed) id
-          (put (st { status = MpvShutdown }))
+          (put (st { status = ELShutdown }))
           (return ())
         -- (mpv_wait_event (ctx st) $ realToFrac wait_time) >>= peek
 
     --return true if waited, or false if didn't
-    waitForTime :: Monad m => Double -> Double -> MpvM m Bool
+    waitForTime :: Monad m => Double -> Double -> ELM m Bool
     waitForTime ct et =
       let timeToWait = (et-ct)
           in
@@ -68,11 +68,11 @@ event_loop mpvState = runStateT doit mpvState >> return ()
                 lift $ return False
 
     --extract result from a monad op and then branch based on the result
-    ifextract :: Monad m => (MpvM m a) -> (a -> Bool) -> (MpvM m b) -> (MpvM m b) -> (MpvM m b)
+    ifextract :: Monad m => (ELM m a) -> (a -> Bool) -> (ELM m b) -> (ELM m b) -> (ELM m b)
     ifextract cond f tru fals =
         cond >>= (\res -> if (f res) then tru else fals)
 
-    doit :: Monad m => MpvM m ()
+    doit :: Monad m => ELM m ()
     doit =
       do
         st <- get
@@ -87,52 +87,52 @@ event_loop mpvState = runStateT doit mpvState >> return ()
 
         --perform the next action depending on the state
         case (status st) of
-          MpvStart ->
+          ELStart ->
               do
                 lift $ (defaultNoSrtAction st)
-                put $ st {status=MpvOutOfLoop}
-          MpvOutOfLoop ->
+                put $ st {status=ELOutOfLoop}
+          ELOutOfLoop ->
               do
                 ifextract (waitForTime jtime (startTime loop)) not
                   (do
                     lift $ (playAction st loop)
-                    put $ st {status=MpvInLoop})
+                    put $ st {status=ELInLoop})
                   (return ())
-          MpvInLoop ->
+          ELInLoop ->
               do
                 --if we wait at all, we go back to the start and reread the time, etc.
                 --otherwise, we go ahead and update the state
                 ifextract (waitForTime jtime (endTime loop)) not
                   (do
-                     put $ st {status=MpvEndLoop,
+                     put $ st {status=ELEndLoop,
                                priorLoops = loop : (priorLoops st),
                                nextLoops = tail (nextLoops st)
                               })
                   (return ())
-          MpvEndLoop ->
+          ELEndLoop ->
               do
                 if jtime < (startTime loop) -- if the next loop doesn't start yet
                 then
                   do
                     --go to default mode and let it play
                     lift $ (defaultNoSrtAction st)
-                    put $ st {status=MpvOutOfLoop}
+                    put $ st {status=ELOutOfLoop}
                 else
                   do
                     --seek (backwards) to the start of the loop and play it
                     lift $ (seekAction st loop) >> (playAction st loop)
-                    put $ st {status=MpvInLoop}
-          MpvShutdown -> return ()
+                    put $ st {status=ELInLoop}
+          ELShutdown -> return ()
 
-        if (status st) == MpvShutdown then return ()
+        if (status st) == ELShutdown then return ()
         else doit --restart the event loop
 
 bigTime = 99999999
 
-createInitialMpvState loops defaultNoSrtAction readTimeAction waitAction seekAction playAction =
-  MpvState []
-           (loops ++ [(Loop (MpvLoopData 1.0 []) bigTime bigTime)]) -- we add an ending loop which keeps the system playing until the end of the movie
-           MpvStart
+createInitialELState loops defaultNoSrtAction readTimeAction waitAction seekAction playAction =
+  ELState []
+           (loops ++ [(Loop (EventLoopData 1.0 []) bigTime bigTime)]) -- we add an ending loop which keeps the system playing until the end of the movie
+           ELStart
            defaultNoSrtAction
            readTimeAction
            waitAction
