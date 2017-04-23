@@ -160,7 +160,7 @@ createLoopArraysForTrack srtss t =
       srts = srtss !! (timingSid-1)
   in
     fmap ((\srt -> createEventLoop ((SF.startTime srt) - (leadSecs t))
-                                ((SF.endTime srt) - (tailSecs t))
+                                ((SF.endTime srt) + (tailSecs t))
                                 (speed t) (sids t)) :: Srt -> EventLoop)
          srts
 

@@ -14,7 +14,7 @@ data ELStatus =
   | ELInLoop -- loop action run and inside of a loop
   | ELUserSeek ELStatus -- user did a seek, contains previous status
   | ELOutOfLoop -- defaultNoSrtAction run and outside of loop
-  | ELEndLoop -- loop finished, and first of nextLoops moved to priorLoops, but
+  | ELEndLoop -- loop finished, and loopIndex changed, but
                -- next action not run (which would be defaultNoSrtAction or the
                -- next loops action, if outside or inside another loop respectively)
   | ELShutdown -- in shutdown state (the user quit)
@@ -29,8 +29,8 @@ data ELWaitEvent =
      deriving (Show, Eq)
 
 data ELState m = ELState {
-              priorLoopsRev :: [EventLoop], --loops already run *in backwards order*
-              nextLoops :: [EventLoop], --loops to run later (or currently running)
+              loopIndex :: Int, -- current index into loops
+              loops :: [EventLoop], --list of srt loops
               status :: ELStatus,
 
               --TODO the following never change, reader?
@@ -46,7 +46,7 @@ data ELState m = ELState {
            }
 
 instance Show (ELState m) where
-  show s = "ELState { priorLoopsRev="++show(priorLoopsRev s)++", nextLoops="++show(nextLoops s)++", status="++show(status s)++" }"
+  show s = "ELState { loopIndex="++show(loopIndex s)++", status="++show(status s)++" }"
 
 type ELM m = StateT (ELState m) m
 
@@ -54,12 +54,9 @@ createEventLoop startTime endTime speed sids = Loop (EventLoopData speed sids) s
 
 updateEventLoopsForSeek :: Double -> ELState m -> ELState m
 updateEventLoopsForSeek currTime state =
-  let allLoops = (reverse (priorLoopsRev state)) ++ (nextLoops state)
-      (Just splitPoint) = findIndex (\l -> (endTime l) - maxLoopEndTimeDiff > currTime) allLoops
+  let (Just newLoopIndex) = findIndex (\l -> (endTime l) - maxLoopEndTimeDiff > currTime) (loops state)
       in
-        (state { priorLoopsRev = reverse $ take splitPoint allLoops,
-                 nextLoops = drop splitPoint allLoops,
-                 status = ELUserSeek (status state)})
+        (state { loopIndex = newLoopIndex })
         
 readTimeOrDefault :: Monad m => Double -> StateT (ELState m) m Double
 readTimeOrDefault def =
@@ -132,20 +129,28 @@ eventLoop elState = runStateT doit elState >> return ()
     ifextract cond f tru fals =
         cond >>= (\res -> if (f res) then tru else fals)
 
-    outOfSyncStartTime = 3
-    outOfSyncEndTime = 3
+    outOfSyncStartTime = 1
+    outOfSyncEndTime = 1
 
-    outOfSyncTime :: Double -> ELState m -> Bool
+    outOfSyncTime :: Monad m => Double -> ELState m -> Bool
     outOfSyncTime time state =
-
-      case (status state) of
-         ELInLoop ->
-          (time < (startTime loop) - outOfSyncStartTime ||
-           time > (endTime loop) + outOfSyncEndTime)
-         ELEndLoop -> False
-         _ ->
-          (time < (startTime loop) - outOfSyncStartTime ||
-           time > (endTime loop) + outOfSyncEndTime)
+      let li = (loopIndex state)
+          loop = (loops state) !! li
+          lastLoopEndTime =
+             if li == 0
+             then -999999.00
+             else
+                endTime ((loops state) !! (li - 1))
+      in
+        case (status state) of
+          ELInLoop ->
+            (time < (startTime loop) - outOfSyncStartTime ||
+            time > (endTime loop) + outOfSyncEndTime)
+          ELEndLoop -> False
+          ELOutOfLoop -> 
+            (time > (startTime loop) + outOfSyncStartTime ||
+             time < lastLoopEndTime - outOfSyncEndTime)
+          _ -> False
 
     doit :: Monad m => ELM m ()
     doit =
@@ -155,7 +160,7 @@ eventLoop elState = runStateT doit elState >> return ()
         time <- readTimeOrDefault 0.0
 
         --find the current loop
-        loop <- return (head (nextLoops st))
+        loop <- return $ (loops st) !! (loopIndex st)
 
         --if we aren't where we expect in the file, the user probably seeked somewhere else
         if outOfSyncTime time st
@@ -204,8 +209,7 @@ eventLoop elState = runStateT doit elState >> return ()
                   ifextract (waitForTime time (endTime loop)) not
                     (do
                        put $ st {status=ELEndLoop,
-                                 priorLoops = loop : (priorLoops st),
-                                 nextLoops = tail (nextLoops st)
+                                 loopIndex = (loopIndex st) + 1
                                 })
                     (return ())
             ELEndLoop ->
@@ -229,7 +233,7 @@ eventLoop elState = runStateT doit elState >> return ()
 bigTime = 99999999
 
 createInitialELState loops defaultNoSrtAction readTimeAction waitAction seekAction playAction =
-  ELState []
+  ELState 0
            (loops ++ [(Loop (EventLoopData 1.0 []) bigTime bigTime)]) -- we add an ending loop which keeps the system playing until the end of the movie
            ELStart
            defaultNoSrtAction
