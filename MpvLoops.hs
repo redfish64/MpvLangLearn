@@ -68,13 +68,19 @@ readTimeAction = readDouble "playback-time"
 readSpeedAction :: MLM (Maybe Double)
 readSpeedAction = readDouble "speed"
 
-waitAction :: Double -> MLM Bool
+waitAction :: Double -> MLM EL.ELWaitEvent
 waitAction time =
   do
     env <- ask
     event <- lift $ (mpvWaitEvent (ctx env) (realToFrac time)) >>= lift . peek 
     liftIO $ putStrLn ("mpv_wait_event: " ++ (show (event_id event)))
-    return $ (MS.event_id event) == MS.mpvEventShutdown 
+    -- time <- readTimeAction
+    -- liftIO $ putStrLn ("time is "++show time)
+    case (MS.event_id event) of
+      m | m == MS.mpvEventShutdown -> return EL.ELWShutdown
+      --m | m == MS.mpvEventPlaybackRestart -> return EL.ELWSeekFinished
+      m | m == MS.mpvEventSeek -> return EL.ELWSeekFinished
+      _ -> return EL.ELWOther
 
 seekAction :: EL.EventLoop -> MLM ()
 seekAction loop =

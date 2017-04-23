@@ -15,6 +15,7 @@ newtype MpvEventId = MpvEventId { unMpvEventId :: CInt } deriving (Eq,Show)
  , mpvEventLogMessage = MPV_EVENT_LOG_MESSAGE
  , mpvEventIdle = MPV_EVENT_IDLE
  , mpvEventPlaybackRestart = MPV_EVENT_PLAYBACK_RESTART
+ , mpvEventSeek = MPV_EVENT_SEEK
  }
 
 newtype MpvError = MpvError { unMpvError :: CInt } deriving (Eq,Show)  
