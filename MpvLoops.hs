@@ -97,6 +97,9 @@ playAction loop =
     setSpeed (EL.speed (val loop))
     setSids (EL.sids (val loop))
 
+elLog :: String -> MLM()
+elLog msg = liftIO $ putStrLn msg
+
 
 createInitialMpvState :: [EL.EventLoop] -> EL.ELState MLM
 createInitialMpvState loops =
@@ -107,6 +110,7 @@ createInitialMpvState loops =
                         waitAction
                         seekAction
                         playAction
+                        elLog
 
 
 

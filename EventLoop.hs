@@ -4,7 +4,7 @@ import Control.Monad.State
 import Loops
 import Util
 import Data.List
-
+import Text.Printf (printf)
 data EventLoopData = EventLoopData { speed :: Double, sids :: [Int] } deriving (Show)
 
 type EventLoop = Loop EventLoopData
@@ -42,7 +42,8 @@ data ELState m = ELState {
               waitAction :: Double -> m ELWaitEvent, -- waits the given period of time (or less)
                                               -- returns true if user requested shutdown
               seekAction :: EventLoop -> m (), --action when we need to seek to the start of a loop 
-              playAction :: EventLoop -> m () --action to play the loop
+              playAction :: EventLoop -> m (), --action to play the loop
+              elLog :: String -> m () --log message
            }
 
 instance Show (ELState m) where
@@ -84,33 +85,7 @@ eventLoop elState = runStateT doit elState >> return ()
         waitEvent <- lift $ (waitAction st (wait_time/speed))
         case waitEvent of
              ELWShutdown -> (put (st { status = ELShutdown }))
-             -- ELWSeekFinished ->
-             --   do
-             --     time <- readTimeOrDefault 0.0
-             --     --the user may have seeked or we may be responding to our
-             --     --own seek call. In the latter case, we should only be seeking
-             --     --to the start of our own event. In the former case, we could
-             --     --be seeking anywhere. The important part is that we don't
-             --     --"get in the way" of the user's intentions. This means that
-             --     --we shouldn't trigger a rewind at the end of a subtitle
-             --     --if the user skipped to it
-                 
-             --     let currLoop = (head (nextLoops st))
-
-             --     --if the rewind event is within the current subtitle
-             --     --start and end times (within certain tolerances), we
-             --     --ignore it
-             --     if time > (startTime currLoop) - maxLoopStartTimeDiff &&
-             --       time < (endTime currLoop) - maxLoopEndTimeDiff then
-             --       return ()
-             --     else
-             --       do
-             --         modify (updateEventLoopsForSeek time)
-             --         return ()
-
-
              _ -> (return ())
-        -- (mpv_wait_event (ctx st) $ realToFrac wait_time) >>= peek
 
     --return true if waited, or false if didn't
     waitForTime :: Monad m => Double -> Double -> ELM m Bool
@@ -148,7 +123,7 @@ eventLoop elState = runStateT doit elState >> return ()
             time > (endTime loop) + outOfSyncEndTime)
           ELEndLoop -> False
           ELOutOfLoop -> 
-            (time > (startTime loop) + outOfSyncStartTime ||
+            (time > (startTime loop) + outOfSyncStartTime &&
              time < lastLoopEndTime - outOfSyncEndTime)
           _ -> False
 
@@ -165,11 +140,13 @@ eventLoop elState = runStateT doit elState >> return ()
         --if we aren't where we expect in the file, the user probably seeked somewhere else
         if outOfSyncTime time st
         then
-          let newSt = updateEventLoopsForSeek time st
-            in
-              do
-                lift $ (defaultNoSrtAction st)
-                put $ newSt {status=ELOutOfLoop}
+          do
+            lift $ (elLog st (printf "outOfSyncTime: time %0.2f status %s loop %s" time (show (status st)) (show loop)))
+            let newSt = updateEventLoopsForSeek time st
+              in
+                do
+                  lift $ (defaultNoSrtAction st)
+                  put $ newSt {status=ELOutOfLoop}
         else              
           --perform the next action depending on the state
           case (status st) of

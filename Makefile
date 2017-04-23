@@ -13,10 +13,10 @@ tags:   $(HS_FILES) MpvStructs.hsc
 	hasktags -L .
 
 foo.o: foo.c
-	gcc $(DEBUG) -c foo.c
+	gcc $(DEBUG) -fPIC -c foo.c
 
 MpvStructs.hs: MpvStructs.hsc
 	hsc2hs MpvStructs.hsc
 
 MpvLL: $(HS_FILES) tags foo.o
-	$(GHC) --make $(DEBUG) -o MpvLL -lmpv $(MAIN_FILE) foo.o
+	$(GHC) -fPIC --make $(DEBUG) -o MpvLL -lmpv $(MAIN_FILE) foo.o

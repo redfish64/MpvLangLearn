@@ -150,6 +150,8 @@ parseArgs args = do
   mpvArgs <- parseMpvArgs mpvArgsStr
   return $ Conf subfiles tracks mpvArgs
 
+--the guaranteed gap betwen subtitles (so we don't flicker other subtitles on the screen)
+srtGap = 0.1
 
 createLoopArraysForTrack :: [[Srt]] -> Track -> [EventLoop]
 createLoopArraysForTrack srtss t =
@@ -159,12 +161,19 @@ createLoopArraysForTrack srtss t =
            x : xs -> x
       srts = srtss !! (timingSid-1)
   in
-    fmap ((\srt -> createEventLoop ((SF.startTime srt) - (leadSecs t))
-                                ((SF.endTime srt) + (tailSecs t))
-                                (speed t) (sids t)) :: Srt -> EventLoop)
-         srts
-
+    createELs srts 0 0.0
+  where
+    createELs :: [Srt] -> Int -> Double -> [EventLoop]
+    createELs [] _ _ = []
+    createELs (srt : srts) index lastEventLoopEndTime =
+     let nextSrtStartTime = if (length srts) > 0 then (SF.startTime (head srts)) else 9999999.0
+         startTime = (max lastEventLoopEndTime ((SF.startTime srt) - (leadSecs t)))
+         endTime = (min (nextSrtStartTime - srtGap) (SF.endTime srt + tailSecs t))
+     in (createEventLoop startTime endTime (speed t) (sids t)) :
+                         (createELs srts (index+1) endTime)
+                         
 createLoopArrays :: [[Srt]] -> [Track] -> [[EventLoop]]
 createLoopArrays srtss tracks = fmap (createLoopArraysForTrack srtss) tracks
                        
 
+--TODO test file with baked in subs

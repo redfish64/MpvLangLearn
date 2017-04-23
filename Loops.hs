@@ -18,9 +18,9 @@ instance Ord (Loop a) where
 -- 2. if a loop in an early track has a start time before the end time of a loop in a later
 --    track, the loop in the earlier track goes first
 loopOrdering :: ( (Loop a), Int ) ->  ( (Loop a), Int ) ->  Ordering
-loopOrdering (a,ta) (b,tb) | ta == tb = compare a b
-                           | ta < tb = compare (startTime a) (endTime b)
-                           | tb > ta = compare (startTime b) (endTime a)
+loopOrdering (a,ta) (b,tb) | ta == tb = compare (startTime a) (startTime b)
+                           | ta < tb = if (startTime a) < (endTime b) then LT else GT
+                           | ta > tb = if (endTime a) <= (startTime b) then LT else GT
 
 
 --flattens a list of lists of values to a single flat list with a number indicating the index
