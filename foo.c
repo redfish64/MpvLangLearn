@@ -23,3 +23,4 @@ int set_multiple_subfiles(mpv_handle *ctx, int num_files, char **subfiles)
     
     return mpv_set_option(ctx,"sub-file",MPV_FORMAT_NODE,&rv);
 }
+

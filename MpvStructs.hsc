@@ -16,6 +16,7 @@ newtype MpvEventId = MpvEventId { unMpvEventId :: CInt } deriving (Eq,Show)
  , mpvEventIdle = MPV_EVENT_IDLE
  , mpvEventPlaybackRestart = MPV_EVENT_PLAYBACK_RESTART
  , mpvEventSeek = MPV_EVENT_SEEK
+ , mpvEventPropertyChange = MPV_EVENT_PROPERTY_CHANGE
  }
 
 newtype MpvError = MpvError { unMpvError :: CInt } deriving (Eq,Show)  
@@ -54,17 +55,27 @@ instance Storable MpvEventId where
     (pokeByteOff ptr 0  event_id)
   
 
-data MpvEvent = MpvEvent { event_id :: MpvEventId }
+data MpvEvent = MpvEvent { event_id :: MpvEventId, edata :: Ptr () }
 
 instance Storable MpvEvent where
   alignment _ = #{alignment mpv_event}
   sizeOf _ = #{size mpv_event}
   peek ptr = do
     event_id <- #{peek mpv_event, event_id} ptr
-    -- b <- #{peek mpv_event, b} ptr
-    -- c <- #{peek mpv_event, c} ptr
-    return (MpvEvent event_id)
-  poke ptr (MpvEvent event_id) = do
+    edata <- #{peek mpv_event, data} ptr
+    return (MpvEvent event_id edata)
+  poke ptr (MpvEvent event_id edata) = do
     #{poke mpv_event, event_id} ptr event_id
-    -- #{poke mpv_event, b} ptr b
-    -- #{poke mpv_event, c} ptr c 
+    #{poke mpv_event, data} ptr edata
+
+data MpvEventProperty = MpvEventProperty { name :: CString, format :: CInt,  pdata :: Ptr () }
+
+instance Storable MpvEventProperty where
+  alignment _ = #{alignment mpv_event_property}
+  sizeOf _ = #{size mpv_event_property}
+  peek ptr = do
+    name <- #{peek mpv_event_property, name} ptr
+    format <- #{peek mpv_event_property, format} ptr
+    pdata <- #{peek mpv_event_property, data} ptr
+    return (MpvEventProperty name format pdata)
+  poke ptr = undefined

@@ -25,6 +25,7 @@ data ELWaitEvent =
      | ELWSeekFinished -- occurs when a seek occurred, possibly by the user
                        -- (this may also occur in response to a "seekAction" request
                        --  and this module will be able to handle it properly)
+     | ELWSubDelayChanged Double -- the subtitle delay was changed by the user
      | ELWOther -- we woke up from the wait for another reason (will be ignored by this module)
      deriving (Show, Eq)
 
@@ -32,6 +33,7 @@ data ELState m = ELState {
               loopIndex :: Int, -- current index into loops
               loops :: [EventLoop], --list of srt loops
               status :: ELStatus,
+              subDelay :: Double,
 
               --TODO the following never change, reader?
               defaultNoSrtAction :: m (), -- if a loop finishes and there isn't another
@@ -41,7 +43,7 @@ data ELState m = ELState {
               readSpeedAction :: m (Maybe Double), -- returns the current speed.
               waitAction :: Double -> m ELWaitEvent, -- waits the given period of time (or less)
                                               -- returns true if user requested shutdown
-              seekAction :: EventLoop -> m (), --action when we need to seek to the start of a loop 
+              seekAction :: Double -> m (), --action when we need to seek to a particular time
               playAction :: EventLoop -> m (), --action to play the loop
               elLog :: String -> m () --log message
            }
@@ -58,13 +60,15 @@ updateEventLoopsForSeek currTime state =
   let (Just newLoopIndex) = findIndex (\l -> (endTime l) - maxLoopEndTimeDiff > currTime) (loops state)
       in
         (state { loopIndex = newLoopIndex })
-        
-readTimeOrDefault :: Monad m => Double -> StateT (ELState m) m Double
-readTimeOrDefault def =
+
+--reads the current playback time, subtracting the offset of the sub delay (set by user
+-- hitting 'x' or 'z')
+readTimeOrDefaultOffsetSubDelay :: Monad m => Double -> StateT (ELState m) m Double
+readTimeOrDefaultOffsetSubDelay def =
   do
     st <- get
     mtime <- lift $ readTimeAction st
-    return $ maybeDefault mtime def
+    return $ (maybeDefault mtime def) - (subDelay st)
 
 
 maxLoopStartTimeDiff :: Double
@@ -85,6 +89,9 @@ eventLoop elState = runStateT doit elState >> return ()
         waitEvent <- lift $ (waitAction st (wait_time/speed))
         case waitEvent of
              ELWShutdown -> (put (st { status = ELShutdown }))
+             ELWSubDelayChanged v ->
+              do (put (st { subDelay = v}))
+                 lift $ (elLog st ("subdelay changed to "++(show v)))
              _ -> (return ())
 
     --return true if waited, or false if didn't
@@ -132,7 +139,7 @@ eventLoop elState = runStateT doit elState >> return ()
       do
         st <- get
 --        time <- lift $ mpv_get_property_double ctx "time-pos"
-        time <- readTimeOrDefault 0.0
+        time <- readTimeOrDefaultOffsetSubDelay 0.0
 
         --find the current loop
         loop <- return $ (loops st) !! (loopIndex st)
@@ -154,22 +161,6 @@ eventLoop elState = runStateT doit elState >> return ()
                 do
                   lift $ (defaultNoSrtAction st)
                   put $ st {status=ELOutOfLoop}
-            -- ELUserSeek oldStatus ->
-            --     do
-            --       if(time < (startTime loop)- 4) -- if now outside of loop
-            --       then
-            --         do 
-            --           put $ st {status = ELOutOfLoop}
-            --           if(oldStatus == ELOutOfLoop)
-            --           then
-            --             return ()
-            --           else
-            --             lift $ (defaultNoSrtAction st)
-            --       else -- must be inside the current loop
-            --         do
-            --           lift $ (playAction st loop)
-            --           put $ st { status=ELInLoop}
-
             ELOutOfLoop ->
                 do
                   --if we are at the start of the next loop
@@ -200,7 +191,7 @@ eventLoop elState = runStateT doit elState >> return ()
                   else
                     do
                       --seek (backwards) to the start of the loop and play it
-                      lift $ (seekAction st loop) >> (playAction st loop)
+                      lift $ (seekAction st ((startTime loop)+(subDelay st))) >> (playAction st loop)
                       put $ st {status=ELInLoop}
             ELShutdown -> return ()
 
@@ -213,6 +204,7 @@ createInitialELState loops defaultNoSrtAction readTimeAction waitAction seekActi
   ELState 0
            (loops ++ [(Loop (EventLoopData 1.0 []) bigTime bigTime)]) -- we add an ending loop which keeps the system playing until the end of the movie
            ELStart
+           0.0 --sub delay
            defaultNoSrtAction
            readTimeAction
            waitAction

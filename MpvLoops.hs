@@ -5,7 +5,8 @@ module MpvLoops (createInitialMpvState,
 
 import MpvFFI
 import qualified MpvStructs as MS
-import Foreign (Ptr,peek)
+import Foreign (Ptr,peek,castPtr)
+import Foreign.C.String (peekCAString)
 import qualified EventLoop as EL
 import Control.Monad.Reader
 import Loops
@@ -80,15 +81,26 @@ waitAction time =
       m | m == MS.mpvEventShutdown -> return EL.ELWShutdown
       --m | m == MS.mpvEventPlaybackRestart -> return EL.ELWSeekFinished
       m | m == MS.mpvEventSeek -> return EL.ELWSeekFinished
+      m | m == MS.mpvEventPropertyChange ->
+        do
+          eventProperty <- liftIO $ peek (castPtr (MS.edata event))
+          epName <- liftIO $ peekCAString (MS.name eventProperty)
+          case epName of
+                "sub-delay" ->
+                   do
+                     amt <- liftIO (peek (castPtr (MS.pdata eventProperty)))
+                     return $ EL.ELWSubDelayChanged amt
+                _ -> return EL.ELWOther
+               
       _ -> return EL.ELWOther
 
-seekAction :: EL.EventLoop -> MLM ()
-seekAction loop =
+seekAction :: Double -> MLM ()
+seekAction startTime =
   do
     env <- ask
-    liftIO $ putStrLn $ "seeking to " ++ (show (startTime loop))
-    lift $ mpvSetPropertyDouble (ctx env) "playback-time" (realToFrac (startTime loop))
-    liftIO $ putStrLn $ "done seeking to " ++ (show (startTime loop))
+    liftIO $ putStrLn $ "seeking to " ++ (show startTime)
+    lift $ mpvSetPropertyDouble (ctx env) "playback-time" (realToFrac startTime)
+    liftIO $ putStrLn $ "done seeking to " ++ (show startTime)
     return ()
 
 playAction :: EL.EventLoop -> MLM ()

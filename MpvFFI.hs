@@ -15,6 +15,7 @@ module MpvFFI (mpvCreate,
               mpvWaitEvent,
               mpvTerminateDestroy,
               setMultipleSubfiles,
+              mpvObservePropertyDouble,
               loadFiles,
               MFM,
               MpvFFIEnv(..),
@@ -53,7 +54,7 @@ type MFM = ReaderT MpvFFIEnv IO
 data Call = CMpvCreate | CMpvInitialize | CMpvTerminateDestroy | CMpvSetOptionString
           | CMpvSetPropertyString | CMpvSetProperty
           | CMpvCommand | CSetMultipleSubfiles | CMpvWaitEvent
-          | CMpvGetProperty | CMpvSetOption
+          | CMpvGetProperty | CMpvSetOption | CMpvObserveProperty
           deriving (Show,Eq)
 
 foreign import ccall unsafe "mpv/client.h mpv_create"
@@ -91,8 +92,8 @@ foreign import ccall unsafe "foo.h set_multiple_subfiles"
 foreign import ccall unsafe "mpv/client.h mpv_wait_event"
         c_mpv_wait_event :: Ctx -> CDouble -> IO (Ptr MpvEvent)
 
--- foreign import ccall unsafe "mpv/client.h mpv_observe_property"
---         c_mpv_observe_property Ctx -> CInt -> CInt -> IO CInt
+foreign import ccall unsafe "mpv/client.h mpv_observe_property"
+        c_mpv_observe_property :: Ctx -> CInt -> CString -> CInt -> IO CInt
 
 foreign import ccall unsafe "mpv/client.h mpv_get_property"
         c_mpv_get_property :: Ctx -> CString -> CInt -> (Ptr ()) -> IO CInt
@@ -201,6 +202,17 @@ mpvSetPropertyString ctx name value =
            (\cvalue ->
               c_mpv_set_property_string ctx cname cvalue))
     handleError CMpvSetPropertyString error
+
+
+--turns on observe property events for the given property with the format double
+mpvObservePropertyDouble :: Ctx -> String -> MFM MpvError
+mpvObservePropertyDouble ctx name =
+  do
+    error <- lift $ withCString name
+           (\cname ->
+              --5 == MPV_FORMAT_DOUBLE TODO: put in enum
+              c_mpv_observe_property ctx (fromIntegral 0) cname 5)
+    handleError CMpvObserveProperty error
 
 
 --gets a property

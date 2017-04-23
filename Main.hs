@@ -34,11 +34,12 @@ runit conf mpvState =
     mpvSetOptionString ctx "input-default-bindings" "yes"
     mpvSetOptionString ctx "input-vo-keyboard" "yes"
     mpvSetOptionFlag ctx "osc" 1
-    liftIO $ putStrLn $ "set flags for subfiles "++(show (subfiles conf))
+    mpvObservePropertyDouble ctx "sub-delay"
     liftIO $ putStrLn "set options"
     setupMpvFlags ctx (flags (mpvArgs conf))
     setupMpvOptions ctx (opts (mpvArgs conf))
     setMultipleSubfiles ctx (subfiles conf)
+    liftIO $ putStrLn $ "set flags for subfiles "++(show (subfiles conf))
     mpvInitialize ctx
     liftIO $ putStrLn "initialized"
     --TODO if file doesn't exist, doesn't report an error
@@ -59,9 +60,9 @@ main =
     srtArrays <- doMonadOnList (subfiles c) loadSrtFileAndPrintErrors
     let loopArrays = createLoopArrays srtArrays (tracks c)
         mpvState = createInitialMpvState (sortLoopsForPlay loopArrays)
-    doMonadOnList loopArrays (\l -> doMonadOnList l (putStrLn . show))
-    putStrLn "------Loops for play--------- sortLoopsForPlay"
-    doMonadOnList (sortLoopsForPlay loopArrays) (putStrLn . show)
+    --doMonadOnList loopArrays (\l -> doMonadOnList l (putStrLn . show))
+    --putStrLn "------Loops for play--------- sortLoopsForPlay"
+    --doMonadOnList (sortLoopsForPlay loopArrays) (putStrLn . show)
     runReaderT (runit c mpvState) (MpvFFIEnv errorFunc)
   where
     errorFunc call mpvError = lift $ putStrLn $
