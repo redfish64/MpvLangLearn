@@ -58,11 +58,11 @@ main =
                  Left s -> throwIO $ MyException $ "Error: " ++ s
                  Right c -> return c
     srtArrays <- doMonadOnList (subfiles c) loadSrtFileAndPrintErrors
-    let loopArrays = createLoopArrays srtArrays (tracks c)
-        mpvState = createInitialMpvState (sortLoopsForPlay loopArrays)
-    --doMonadOnList loopArrays (\l -> doMonadOnList l (putStrLn . show))
-    --putStrLn "------Loops for play--------- sortLoopsForPlay"
-    --doMonadOnList (sortLoopsForPlay loopArrays) (putStrLn . show)
+    let loopArrays = createAndSortLoopArrays srtArrays (tracks c)
+        mpvState = createInitialMpvState loopArrays
+    putStrLn "------Loops for play--------- sortLoopsForPlay"
+    doMonadOnList loopArrays (putStrLn . show)
+    putStrLn "------done create list"
     runReaderT (runit c mpvState) (MpvFFIEnv errorFunc)
   where
     errorFunc call mpvError = lift $ putStrLn $
