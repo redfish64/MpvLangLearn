@@ -30,7 +30,7 @@ gui = do
              container p $
              column 0
               [ tabs nb
-                [ tab "Simple" $ fill $ container px $ fill $ widget s ] ],
+                [ tab "Simple" $ stretch $ container px $ widget s ] ],
 
             clientSize := sz 400 300 ]
 
@@ -65,8 +65,8 @@ simple w =
     okButton <- button p [ text := "O-Kay!" ]
     cancelButton <- button p [ text := "Not Want" ]
 
-    set p [layout := margin 10 $ stretch $ fill $ column 4 $
-        (fmap (stretch . fill . widget . fieldPanel) [videoField, nativeLangSrtField, foreignLangSrtField]) ++
+    set p [layout := margin 10 $ column 4 $
+        (fmap (widget . fieldPanel) [videoField, nativeLangSrtField, foreignLangSrtField]) ++
           [space 1 30,alignBottomRight $ row 3 [widget cancelButton,  space 10 1, widget okButton]]
         ]
           
@@ -83,7 +83,7 @@ labeledField w name desc ff =
     d <- staticText p [text := desc]
     field <- ff p
     set n [ fontWeight := WeightBold ]
-    set p [ layout := hfill $ column 3 [ fill $ widget n, fill $ widget d, fill $ widget (fieldPanel field) ] ]
+    set p [ layout := column 3 [ widget n, widget d, widget (fieldPanel field) ] ]
     return $ field { fieldPanel = p }
 
 
@@ -104,7 +104,7 @@ fileChooser title fileTypes w =
                       Just f -> set i [text := f] >> return ()
             ]
 
-      set p [layout := hfill $ row 2 [ stretch $ fill $ widget i, space 10 1, widget b]]           
+      set p [layout := hfill $ row 2 [ widget i, space 10 1, widget b]]           
                       
 
       return $ Field p (get i text)
