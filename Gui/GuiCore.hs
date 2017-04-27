@@ -28,9 +28,14 @@ gui = do
     f <- frame [text := "Mpv Lang Learn"]
     p <- panel f []
     nb <- notebook p []
-    px <- panel nb []
-    --    s <- fakeout px
-    s <- simple f px
+    sp <- panel nb [] --needed because notebook needs a container for each page
+    s <- simple f sp
+
+    ap <- panel nb [] --needed because notebook needs a container for each page
+    a <- advanced f ap
+
+    -- ap <- panel ab []
+    -- a <- advanced f px
     --t <- staticText p1 [text := "Hello World"]
     --    set p [layout := fill $ container p $ margin 10 $ widget t ]
     --return p
@@ -39,7 +44,11 @@ gui = do
              container p $
              column 0
               [ tabs nb
-                [ tab "Simple" $ container px $ fill $ widget s ] ],
+                [
+                  tab "Simple" $ container sp $ fill $ widget s,
+                  tab "Advanced" $ container ap $ fill $ widget a
+                ]
+              ],
 
             clientSize := sz 500 350 ]
 
@@ -78,25 +87,85 @@ simple f w =
     nativeLangSrtField <- labeledField p "Native Srt file" "Subtitle file in the native language of the user, srt format" (fileChooser "Open Native Srt" srtFiles)
     foreignLangSrtField <- labeledField p "Foreign Srt file" "Subtitle file in the language of the movie, srt format (optional)" (fileChooser "Open Foreign Srt" srtFiles)
 
-    errorMsgField <- staticText p [ color := red, fontWeight := WeightBold ]
+    eop <- exitOkErrorPanel f p (runSimple videoField nativeLangSrtField foreignLangSrtField)
+    set p [layout := margin 10 $ column 4 $
+        (fmap (hfill. widget . fieldPanel) [videoField, nativeLangSrtField, foreignLangSrtField]) ++
+          [fill $ widget eop]]
+        
+          
+    return p
 
+exitOkErrorPanel :: Frame x -> Panel () -> ((String -> IO ()) -> IO ()) -> IO (Panel ())
+exitOkErrorPanel f w action =
+  do
+    p <- panel w []
+    errorMsgField <- staticText p [ color := red, fontWeight := WeightBold ]
     exitButton <- button p [ text := "Exit", on command := close f]
     okButton <- button p [ text := "OK"]
 
     set okButton  [on command := do
-                      set f [ on idle :=
+                      set errorMsgField [ text := "" ]
+                      set f [
+                        --we do this "on idle" trick, so the button gets unpressed
+                        --when the action (playing a movie most likely) is executed
+                        on idle :=
                               do
-                                runSimple videoField nativeLangSrtField foreignLangSrtField (\msg -> set errorMsgField [ text := msg ])
+                                action (\msg -> set errorMsgField [ text := msg ])
                                 set f [ on idle := return False ]
                                 return False
                             ]
                   ]
-    set p [layout := margin 10 $ column 4 $
-        (fmap (hfill. widget . fieldPanel) [videoField, nativeLangSrtField, foreignLangSrtField]) ++
-          [hfill $ space 20 1, fill $ floatCentre $ widget $ errorMsgField ,hfill $ row 2 [hfill $ widget exitButton, hfill $ widget okButton]]
-        ]
-          
+    set p [ layout := column 3 [ hfill $ space 20 1, fill $ widget $ errorMsgField ,hfill $ row 2 [hfill $ widget exitButton, hfill $ widget okButton ] ]
+          ]
     return p
+
+
+advanced :: Frame x -> Window a -> IO (Panel ())
+advanced f w =
+  do
+    p <- panel w []
+    track1CB <- checkBox p [ text := "Enable Empty Loop" ]
+    track1SpeedText <- staticText p [ text := "Speed x" ]
+    track1Speed <- speedDropDown p
+
+    set p [ layout := hfill $ row 2 [ hfill $ widget track1CB, widget track1Speed] ]
+    return p
+
+
+  where
+    speeds = [ "1.5","1.25","1","0.9","0.75","0.5" ]
+    speedDefault = 2
+    speedDropDown p = choice p [ sorted  := False, items := speeds, selection := speedDefault]
+    trackWidget w widget =
+      do
+        p <- panel w []
+        speedText <- staticText p [ text := "Speed x" ]
+        speedChoice <- speedDropDown p
+
+        set p [ layout := hfill $ row 2 [ hfill $ widget track1CB, widget track1Speed] ]
+        
+--     -- track2SrtField <- labeledField p "Native Srt file" "Subtitle file in the native language of the user, srt format" (fileChooser "Open Native Srt" srtFiles)
+--     -- foreignLangSrtField <- labeledField p "Foreign Srt file" "Subtitle file in the language of the movie, srt format (optional)" (fileChooser "Open Foreign Srt" srtFiles)
+
+--     -- errorMsgField <- staticText p [ color := red, fontWeight := WeightBold ]
+
+--     exitButton <- button p [ text := "Exit", on command := close f]
+--     okButton <- button p [ text := "OK"]
+
+--     set okButton  [on command := do
+--                       set f [ on idle :=
+--                               do
+--                                 runSimple videoField nativeLangSrtField foreignLangSrtField (\msg -> set errorMsgField [ text := msg ])
+--                                 set f [ on idle := return False ]
+--                                 return False
+--                             ]
+--                   ]
+--     set p [layout := margin 10 $ column 4 $
+--         (fmap (hfill. widget . fieldPanel) [videoField, nativeLangSrtField, foreignLangSrtField]) ++
+--           [hfill $ space 20 1, fill $ floatCentre $ widget $ errorMsgField ,hfill $ row 2 [hfill $ widget exitButton, hfill $ widget okButton]]
+--         ]
+          
+--     return p
 
 
 
@@ -112,7 +181,6 @@ runSimple vf nlf flf errorOut =
         Left msg -> errorOut msg
         Right () ->
           do
-            --forkIO $
             if (flSrt /= "") then
               commandLine [flSrt,nlSrt,"--","none:1:1:1","1:1:1:1","2:1:1:1","--",video]
               else
