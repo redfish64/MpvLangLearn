@@ -1,12 +1,16 @@
 module Gui.GuiCore(startGui) where
 
-import Data.Bits
+--import Data.Bits
 import Text.Printf (printf)
 import Core(commandLine)
+import Util(trim)
 
 import Graphics.UI.WX
 import Graphics.UI.WXCore
 import Control.Concurrent(forkIO,forkOS)
+import Control.Monad.Trans.Either (EitherT,left,right,runEitherT)
+import System.Directory (doesFileExist)
+import Control.Monad.Trans.Class(lift)
 -- import Graphics.UI.WXCore.WxcDefs
 -- import Graphics.UI.WXCore.Frame
 -- import Graphics.UI.WXCore.WxcClassesAL
@@ -37,7 +41,7 @@ gui = do
               [ tabs nb
                 [ tab "Simple" $ container px $ fill $ widget s ] ],
 
-            clientSize := sz 400 350 ]
+            clientSize := sz 500 350 ]
 
               -- t <- staticText p [text := "Hello World"]    
      -- quitButton <- button window [text := "Quit", on command := close window]
@@ -71,37 +75,66 @@ simple f w =
     --(widget (fieldPanel videoField))
 
     
-    nativeLangSrtField <- labeledField p "Native Srt file" "Subtitle file in the native language of the user (srt format)" (fileChooser "Open Native Srt" srtFiles)
-    foreignLangSrtField <- labeledField p "Foreign Srt file" "Subtitle file in the language of the movie, optional (srt format)" (fileChooser "Open Foreign Srt" srtFiles)
+    nativeLangSrtField <- labeledField p "Native Srt file" "Subtitle file in the native language of the user, srt format" (fileChooser "Open Native Srt" srtFiles)
+    foreignLangSrtField <- labeledField p "Foreign Srt file" "Subtitle file in the language of the movie, srt format (optional)" (fileChooser "Open Foreign Srt" srtFiles)
 
+    errorMsgField <- staticText p [ color := red, fontWeight := WeightBold ]
+
+    exitButton <- button p [ text := "Exit", on command := close f]
     okButton <- button p [ text := "OK"]
 
     set okButton  [on command := do
                       set f [ on idle :=
                               do
-                                runSimple videoField nativeLangSrtField foreignLangSrtField
+                                runSimple videoField nativeLangSrtField foreignLangSrtField (\msg -> set errorMsgField [ text := msg ])
                                 set f [ on idle := return False ]
                                 return False
                             ]
                   ]
     set p [layout := margin 10 $ column 4 $
         (fmap (hfill. widget . fieldPanel) [videoField, nativeLangSrtField, foreignLangSrtField]) ++
-          [fill $ space 1 30,hfill $ alignBottomRight $ widget okButton]
+          [hfill $ space 20 1, fill $ floatCentre $ widget $ errorMsgField ,hfill $ row 2 [hfill $ widget exitButton, hfill $ widget okButton]]
         ]
           
     return p
 
-runSimple :: Field String -> Field String -> Field String -> IO ()
-runSimple vf nlf flf =
+
+
+runSimple :: Field String -> Field String -> Field String -> (String -> IO ()) ->  IO ()
+runSimple vf nlf flf errorOut =
     do
       video <- (fieldVal vf)
       nlSrt <-  (fieldVal nlf)
       flSrt <-  (fieldVal flf)
-      putStrLn (printf "runSimple: %s %s %s" video nlSrt flSrt)
-      --forkIO $
-      commandLine [flSrt,nlSrt,"--","none:1:1:1","1:1:1:1","2:1:1:1","--",video]
+
+      ca <- runEitherT (checkArgs  (trim video) (trim nlSrt) (trim flSrt))
+      case ca of 
+        Left msg -> errorOut msg
+        Right () ->
+          do
+            --forkIO $
+            if (flSrt /= "") then
+              commandLine [flSrt,nlSrt,"--","none:1:1:1","1:1:1:1","2:1:1:1","--",video]
+              else
+              commandLine [nlSrt,"--","none:1:1:1","1:1:1:1","--",video]
+            return ()
       return ()
-      
+  where
+    checkArgs :: String -> String -> String -> EitherT String IO ()
+    checkArgs video nlSrt flSrt =
+      do
+        guardE "Video field can't be blank" (video /= "")
+        guardE "Native Srt can't be blank"  (nlSrt /= "")
+        (lift . doesFileExist) video >>= (guardE (printf "'%s' doesn't exist" video))
+        (lift . doesFileExist) nlSrt >>= guardE (printf "'%s' doesn't exist" nlSrt)
+        if (flSrt /= "") then
+          (lift . doesFileExist) nlSrt >>= guardE (printf "'%s' doesn't exist" flSrt)
+          else
+          return ()
+        
+guardE :: Monad m => String -> Bool -> EitherT String m ()
+guardE msg False = left msg
+guardE _ True = right ()
 
 
 data Field a = Field { fieldPanel :: Panel (), fieldVal :: IO a }
