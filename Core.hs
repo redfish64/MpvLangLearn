@@ -1,7 +1,6 @@
-module Main where
+module Core (commandLine) where
 
 import Init
-import System.Environment
 import MpvFFI
 import Data.List.Split (splitOn)
 import Data.List (isPrefixOf,elemIndex)
@@ -50,19 +49,19 @@ runit conf mpvState =
     mpvTerminateDestroy ctx -- this should be in some sort of failsafe (like java finally)
     return ()
 
-main :: IO ()
-main =
+
+commandLine :: [String] -> IO ()
+commandLine argsStr =
   do
-    argsStr <- getArgs
     c <- case (parseArgs argsStr) of
-                 Left s -> throwIO $ MyException $ "Error: " ++ s
-                 Right c -> return c
+           Left s -> throwIO $ MyException $ "Error: " ++ s
+           Right c -> return c
     srtArrays <- doMonadOnList (subfiles c) loadSrtFileAndPrintErrors
-    let loopArrays = createLoopArrays srtArrays (tracks c)
-        mpvState = createInitialMpvState (sortLoopsForPlay loopArrays)
-    --doMonadOnList loopArrays (\l -> doMonadOnList l (putStrLn . show))
+    let loopArrays = createAndSortLoopArrays srtArrays (tracks c)
+        mpvState = createInitialMpvState loopArrays
     --putStrLn "------Loops for play--------- sortLoopsForPlay"
-    --doMonadOnList (sortLoopsForPlay loopArrays) (putStrLn . show)
+    --doMonadOnList loopArrays (putStrLn . show)
+    --putStrLn "------done create list"
     runReaderT (runit c mpvState) (MpvFFIEnv errorFunc)
   where
     errorFunc call mpvError = lift $ putStrLn $

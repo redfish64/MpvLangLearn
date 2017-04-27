@@ -1,13 +1,15 @@
-module EventLoop (eventLoop,createEventLoop,EventLoop,speed,sids,createInitialELState, ELState(..), ELWaitEvent(..)) where
+module EventLoop (eventLoop,createEventLoop,EventLoop,createInitialELState, ELState(..), ELWaitEvent(..),Track(..)) where
 
 import Control.Monad.State
 import Loops
 import Util
 import Data.List
 import Text.Printf (printf)
-data EventLoopData = EventLoopData { speed :: Double, sids :: [Int] } deriving (Show)
 
-type EventLoop = Loop EventLoopData
+type EventLoop = Loop Track
+
+data Track = Track { sids :: [Int], speed :: Double, leadSecs :: Double, tailSecs :: Double}
+     deriving (Show)
 
 data ELStatus =
     ELStart --begin
@@ -53,7 +55,7 @@ instance Show (ELState m) where
 
 type ELM m = StateT (ELState m) m
 
-createEventLoop startTime endTime speed sids = Loop (EventLoopData speed sids) startTime endTime
+createEventLoop track startTime endTime = Loop track startTime endTime
 
 updateEventLoopsForSeek :: Double -> ELState m -> ELState m
 updateEventLoopsForSeek currTime state =
@@ -202,7 +204,7 @@ bigTime = 99999999
 
 createInitialELState loops defaultNoSrtAction readTimeAction waitAction seekAction playAction =
   ELState 0
-           (loops ++ [(Loop (EventLoopData 1.0 []) bigTime bigTime)]) -- we add an ending loop which keeps the system playing until the end of the movie
+           (loops ++ [(Loop (Track [] 1.0 0.0 0.0) bigTime bigTime)]) -- we add an ending loop which keeps the system playing until the end of the movie
            ELStart
            0.0 --sub delay
            defaultNoSrtAction

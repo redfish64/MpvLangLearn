@@ -1,4 +1,5 @@
-module Init where
+module Init(
+            Conf(..), MpvArgs(..), parseArgs, createAndSortLoopArrays) where
 
 import System.Environment
 import MpvFFI
@@ -13,11 +14,8 @@ import Loops
 import Control.Monad.Trans.Either
 
 import Foreign (Ptr)
-import EventLoop (EventLoop,createEventLoop)
+import EventLoop (EventLoop,createEventLoop,Track(..))
   
-
-data Track = Track { sids :: [Int], speed :: Double, leadSecs :: Double, tailSecs :: Double}
-     deriving (Show)
 
 type MpvFlag = String
 
@@ -150,9 +148,8 @@ parseArgs args = do
   mpvArgs <- parseMpvArgs mpvArgsStr
   return $ Conf subfiles tracks mpvArgs
 
---the guaranteed gap betwen subtitles (so we don't flicker other subtitles on the screen)
-srtGap = 0.1
-
+--creates loop arrays, but does not add gap (which must be done after loops are sorted
+--in playback order)
 createLoopArraysForTrack :: [[Srt]] -> Track -> [EventLoop]
 createLoopArraysForTrack srtss t =
   let timingSid = 
@@ -161,19 +158,48 @@ createLoopArraysForTrack srtss t =
            x : xs -> x
       srts = srtss !! (timingSid-1)
   in
-    createELs srts 0 0.0
-  where
-    createELs :: [Srt] -> Int -> Double -> [EventLoop]
-    createELs [] _ _ = []
-    createELs (srt : srts) index lastEventLoopEndTime =
-     let nextSrtStartTime = if (length srts) > 0 then (SF.startTime (head srts)) else 9999999.0
-         startTime = (max lastEventLoopEndTime ((SF.startTime srt) - (leadSecs t)))
-         endTime = (min (nextSrtStartTime - srtGap) (SF.endTime srt + tailSecs t))
-     in (createEventLoop startTime endTime (speed t) (sids t)) :
-                         (createELs srts (index+1) endTime)
+    fmap (\srt -> createEventLoop t (SF.startTime srt) (SF.endTime srt)) srts
                          
 createLoopArrays :: [[Srt]] -> [Track] -> [[EventLoop]]
 createLoopArrays srtss tracks = fmap (createLoopArraysForTrack srtss) tracks
-                       
+
+--the guaranteed gap betwen subtitles (so we don't flicker other subtitles on the screen)
+--during the inbetween times
+srtGap = 0.1
+
+addGapsToLoops :: [EventLoop] -> [EventLoop]
+addGapsToLoops els =
+               let tels = (fmap (addTailGap els) [0..(length els)-1])
+               in
+                 fmap (addHeadGap tels) [0..(length tels)-1]
+ where
+    addTailGap :: [EventLoop] -> Int -> EventLoop
+    addTailGap els index =
+               let el = els !! index
+                   nel = earliestLaterTime (endTime el) els index
+                   wantedEndTime = (endTime el) + (tailSecs (val el))
+                in el { endTime = min wantedEndTime (nel - srtGap) }
+    addHeadGap :: [EventLoop] -> Int -> EventLoop
+    addHeadGap els index =
+               let el = els !! index
+                   pel = latestEarlierTime (startTime el)  els index
+                   wantedStartTime = (startTime el) + (leadSecs (val el))
+                 in el { startTime = max wantedStartTime (pel + srtGap) }
+    --TODO PERF goes through entire list for each element
+    earliestLaterTime :: Double -> [EventLoop] -> Int -> Double
+    earliestLaterTime endTime els index =
+                      foldl (\b t -> if t >= endTime then (min t b) else b)
+                            9999999.0 
+                            (fmap startTime (drop index els))
+    latestEarlierTime :: Double -> [EventLoop] -> Int -> Double
+    latestEarlierTime startTime els index =
+                      foldl (\b t -> if t <= startTime then (min t b) else b)
+                            0
+                            (fmap endTime (take index els))
+
+createAndSortLoopArrays :: [[Srt]] -> [Track] -> [EventLoop]
+createAndSortLoopArrays srts tracks = (addGapsToLoops 
+                                        (sortLoopsForPlay
+                                          (createLoopArrays srts tracks)))
 
 --TODO test file with baked in subs
