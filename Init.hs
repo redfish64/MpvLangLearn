@@ -202,4 +202,4 @@ createAndSortLoopArrays srts tracks = (addGapsToLoops
                                         (sortLoopsForPlay
                                           (createLoopArrays srts tracks)))
 
---TODO test file with baked in subs
+--TODO 1.5 does not work with baked in subs

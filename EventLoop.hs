@@ -1,4 +1,4 @@
-module EventLoop (eventLoop,createEventLoop,EventLoop,createInitialELState, ELState(..), ELWaitEvent(..),Track(..)) where
+module EventLoop (eventLoop,createEventLoop,EventLoop,createInitialELState, ELState(..), ELWaitEvent(..),Track(..),startTimeOfEarliestNextLoopStartingAfter,endTimeOfLatestPrevLoopEndingBefore) where
 
 import Control.Monad.State
 import Loops
@@ -78,6 +78,40 @@ maxLoopStartTimeDiff = 1.0
 
 maxLoopEndTimeDiff = 3.0
 
+--finds the end time of the first previous loop that ends before the current loop starts
+endTimeOfLatestPrevLoopEndingBefore :: [EventLoop] -> Int -> Double
+endTimeOfLatestPrevLoopEndingBefore els index =
+    let lStartTime = (startTime (els !! index))
+    in
+      doit2 lStartTime els (index - 1)
+    where
+      doit2 _ els (-1) = -9999999
+      doit2 lStartTime els ci =
+          let cl = els !! ci
+              clEndTime = (endTime cl)
+          in
+            if clEndTime <= lStartTime then
+                clEndTime
+            else
+                doit2 lStartTime els (ci-1)
+                
+--find the start time of the first next loop that starts after the current loop ends
+startTimeOfEarliestNextLoopStartingAfter :: [EventLoop] -> Int -> Double
+startTimeOfEarliestNextLoopStartingAfter els index =
+    let lEndTime = (endTime (els !! index))
+    in
+      doit2 lEndTime els (index + 1)
+    where
+      doit2 _ els 1 = 99999999
+      doit2 lEndTime els ci =
+          let cl = els !! ci
+              clStartTime = (startTime cl)
+          in
+            if clStartTime >= lEndTime then
+                clStartTime
+            else
+                doit2 lEndTime els (ci+1)
+
                      
 eventLoop :: Monad m => ELState m -> m ()
 --event_loop = undefined
@@ -117,24 +151,6 @@ eventLoop elState = runStateT doit elState >> return ()
     outOfSyncStartTime = 1
     outOfSyncEndTime = 1
 
-    --to determine if we are out of sync in before loop, we have to look for the
-    --latest loop that ends before the current loop starts
-    endTimeOfLatestPrevLoopEndingBefore :: [EventLoop] -> Int -> Double
-    endTimeOfLatestPrevLoopEndingBefore els index =
-        let lStartTime = (startTime (els !! index))
-        in
-          doit2 lStartTime els (index - 1)
-        where
-          doit2 _ els (-1) = -9999999
-          doit2 lStartTime els ci =
-              let cl = els !! ci
-                  clEndTime = (endTime cl)
-              in
-                if clEndTime <= lStartTime then
-                    clEndTime
-                else
-                    doit2 lStartTime els (ci-1)
-                         
     outOfSyncTime :: Monad m => Double -> ELState m -> Bool
     outOfSyncTime time state =
       let li = (loopIndex state)
