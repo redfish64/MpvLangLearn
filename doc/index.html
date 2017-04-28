@@ -1,0 +1,29 @@
+<html>
+<title>Mpv Lang Learn</title>
+<body>
+<img src="logo.svg" width="90%">
+<h2>Overview</h2>
+Mpv Lang Learn is a simple program that aids in learning a foreign language using a video and subtitles in .srt format.
+The idea is to loop the video without subtitles, so the user can try and guess what the dialog means, and then repeat with subtitles to
+verify his/her answer.
+<p>If the subtitles in the foreign language being learned are available, the program will (by default) loop the video 3 times, 
+once with no subtitles at all, once with the subtitles of the foreign language, and once in the user's native language.
+<p>Below is an example of this for a user who knows English and is trying to learn Chinese. 
+<img src="videoloop.svg" width="90%">
+<h2>Building/Installing</h2>
+<p>Mpv Lang Learn is available for Linux and Windows. Executables are available here: <a href="foo.html">foo.html</a>
+<p>Source is here: <a href="http://github.com/redfish64/MpvLangLearn/">http://github.com/redfish64/MpvLangLearn/</a>
+<p>In Linux, Compile with: "make" to build command line tool, and "make gui" to build gui
+<h2>Running</h2>
+<p>Command line can be invoked as follows:
+<pre>MpvLL &lt;srt tracks...&gt; -- &lt;track number or none&gt;[:&lt;speed&gt;[:&lt;lead padding&gt;:&lt;trailing padding&gt;]]] -- [mpv options] &lt;video file&gt;</pre>
+<p>For example</p>
+<pre>MpvLL rtrl-ZN.srt rtrl-EN.srt -- none:1:0:1 1:1:0:1 2:1:0:1 -- rtrl.avi</pre>
+<p>This would show the video "rtrl.avi" using subtitle tracks, "rtrl-ZN.srt" and "rtrl-EN.srt". First no subtitles would be shown (because "none" was specified), then a loop with subtitles from track 1, "rtrl-ZN.srt", 
+and finally with subtitles from track 2, "rtrl-EN.srt" 
+<h2>Other notes</h2>
+It's very important that subtitle files loaded line up with each other and the dialog of the movie. If not, the loops will not occur at the right times.
+<There are various programs on the web to do this. Just search the web for "subtitle editor".
+<p>Alternatively, you can use the 'x' and the 'z' keys within mpv to adjust the subtitle delay on the fly. Note that this will not align two different subtitle files,
+so if you are trying to use a native and a foreign language subtitle file together, and they are not aligned, you will have to edit one or the other. 
+</body>
