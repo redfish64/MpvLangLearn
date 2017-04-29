@@ -19,6 +19,16 @@ newtype MpvEventId = MpvEventId { unMpvEventId :: CInt } deriving (Eq,Show)
  , mpvEventPropertyChange = MPV_EVENT_PROPERTY_CHANGE
  }
 
+newtype MpvFormatId = MpvFormatId { unMpvFormatId :: CInt } deriving (Eq, Show)
+
+#{enum MpvFormatId, MpvFormatId
+ , mpvFormatDouble = MPV_FORMAT_DOUBLE
+ , mpvFormatString = MPV_FORMAT_STRING
+ , mpvFormatInt64 = MPV_FORMAT_INT64
+ , mpvFormatFlag = MPV_FORMAT_FLAG
+ }
+ 
+
 newtype MpvError = MpvError { unMpvError :: CInt } deriving (Eq,Show)  
 
 #{enum MpvError, MpvError 

@@ -44,6 +44,8 @@ runit conf mpvState =
     --TODO if file doesn't exist, doesn't report an error
     loadFiles ctx (singleArgs (mpvArgs conf))
     liftIO $ putStrLn "loaded files"
+    tracks <- mpvGetPropertyString ctx "track-list/count"
+    liftIO $ putStrLn $ "Tracks are " ++ (show tracks)
     runReaderT (eventLoop mpvState) (MLEnv ctx 1.0) 
     liftIO $ putStrLn "finished event loop"
     mpvTerminateDestroy ctx -- this should be in some sort of failsafe (like java finally)

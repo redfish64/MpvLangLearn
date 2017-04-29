@@ -9,6 +9,9 @@ module MpvFFI (mpvCreate,
               mpvSetPropertyDouble,
               mpvSetPropertyString,
               mpvGetPropertyDouble,
+              mpvGetPropertyInt,
+              mpvGetPropertyString,
+              mpvGetPropertyBool,
               setupMpvFlags,
               setupMpvOptions,
               mpvInitialize,
@@ -33,6 +36,7 @@ import Control.Exception
 --import Data.Typeable
 import Util
 import Control.Monad.Reader
+import Control.Monad.Trans.Either(EitherT(..))
 import Data.Either
 
 data MpvFFIException = MpvFFIException String
@@ -97,6 +101,12 @@ foreign import ccall unsafe "mpv/client.h mpv_observe_property"
 
 foreign import ccall unsafe "mpv/client.h mpv_get_property"
         c_mpv_get_property :: Ctx -> CString -> CInt -> (Ptr ()) -> IO CInt
+
+foreign import ccall unsafe "mpv/client.h mpv_get_property_string"
+        c_mpv_get_property_string :: Ctx -> CString -> CString
+
+foreign import ccall unsafe "mpv/client.h mpv_free"
+        c_mpv_free :: Ptr x -> IO ()
 
 --if func returns true, throws an exception
 throw_mpve_on :: Show a => IO a -> (a -> Maybe String) -> IO a
@@ -215,10 +225,11 @@ mpvObservePropertyDouble ctx name =
     handleError CMpvObserveProperty error
 
 
+
 --gets a property
 --Ex. "time-pos"  position in current file in seconds
-mpvGetPropertyDouble :: Ctx -> String -> MFM (Either MpvError Double)
-mpvGetPropertyDouble ctx name =
+mpvGetProperty :: Storable x => Ctx -> String -> MpvFormatId -> MFM (Either MpvError x)
+mpvGetProperty ctx name fmt =
   do
     errorOrResult <- lift $ withCString name
        (\cname ->
@@ -226,20 +237,70 @@ mpvGetPropertyDouble ctx name =
             ((\value ->
                do
                  voidvalue <- return (castPtr value)
-                 --TODO: put in enum (5 == MPV_FORMAT_DOUBLE)
-                 status <- c_mpv_get_property ctx cname 5 voidvalue
+                 status <- c_mpv_get_property ctx cname (fromIntegral (unMpvFormatId fmt)) voidvalue
                  if status < 0
                  then
                    return $ Left status
                  else
                    ((peek value) >>= return . Right)
-             ) :: (Ptr CDouble -> IO (Either CInt CDouble)))
+             ) :: Storable x => (Ptr x -> IO (Either CInt x)))
             
        )
     case errorOrResult of
          Left error -> handleError CMpvGetProperty (fromIntegral error)
                          >>= (return . Left)
-         Right res -> return $ Right (realToFrac res)
+         Right res -> return $ Right res
+                
+--gets a property
+--Ex. "time-pos"  position in current file in seconds
+mpvGetPropertyDouble :: Ctx -> String -> MFM (Either MpvError Double)
+mpvGetPropertyDouble ctx name =
+  do
+    res <- mpvGetProperty ctx name mpvFormatDouble :: MFM (Either MpvError CDouble)
+    return $ fmap realToFrac res
+                       
+mpvGetPropertyBool :: Ctx -> String -> MFM (Either MpvError Bool)
+mpvGetPropertyBool ctx name =
+  do
+    res <- mpvGetProperty ctx name mpvFormatFlag :: MFM (Either MpvError CInt)
+    return $ fmap (/= 0) res
+                       
+--gets a property
+--Ex. "time-pos"  position in current file in seconds
+mpvGetPropertyInt :: Ctx -> String -> MFM (Either MpvError Int)
+mpvGetPropertyInt ctx name =
+  do
+    res <- mpvGetProperty ctx name mpvFormatInt64 :: MFM (Either MpvError CIntMax)
+    return $ fmap fromIntegral res
+                       
+--gets a property
+mpvGetPropertyString :: Ctx -> String -> MFM (Either MpvError String)
+mpvGetPropertyString ctx name =
+  do
+    errorOrResult <- lift $ withCString name
+       (\cname ->
+          alloca
+            ((\chararrayptr ->
+               do
+                 voidptr <- return (castPtr chararrayptr)
+                 --TODO: put in enum (1 == MPV_FORMAT_STRING)
+                 status <- c_mpv_get_property ctx cname 1 voidptr
+                 if status < 0
+                 then
+                   return $ Left status
+                 else
+                     do
+                       cstrRes <- (peek chararrayptr)
+                       res <- (peekCString cstrRes)
+                       c_mpv_free cstrRes
+                       return (Right res)
+             ) :: (Ptr CString -> IO (Either CInt String)))
+            
+       )
+    case errorOrResult of
+         Left error -> handleError CMpvGetProperty (fromIntegral error)
+                         >>= (return . Left)
+         Right res -> return (Right res)
                        
 setupMpvFlags :: Ctx -> [String] -> MFM ()
 setupMpvFlags ctx xs = recurseMonad xs (\x -> mpvSetOptionFlag ctx x 1 >> return ())

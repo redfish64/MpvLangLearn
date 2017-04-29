@@ -93,3 +93,5 @@ rwsTest =
          let x = 1
          tell [show x]
          return ()
+
+--data Xz = Xz { mytype :: * }

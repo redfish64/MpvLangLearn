@@ -10,7 +10,8 @@ import Foreign.C.String (peekCAString)
 import qualified EventLoop as EL
 import Control.Monad.Reader
 import Loops
-
+import Text.Printf(printf)
+import Control.Monad.Trans.Either (EitherT(..),left,right,hoistEither)
 data MLEnv = MLEnv { ctx :: Ctx,
                        defaultNoSrtSpeed :: Double
                      }
@@ -75,6 +76,9 @@ waitAction time =
     env <- ask
     event <- lift $ (mpvWaitEvent (ctx env) (realToFrac time)) >>= lift . peek 
     liftIO $ putStrLn ("mpv_wait_event: " ++ (show (event_id event)))
+
+    --TODO FIXME HACK
+    runEitherT printTracksInfo
     -- time <- readTimeAction
     -- liftIO $ putStrLn ("time is "++show time)
     case (MS.event_id event) of
@@ -93,6 +97,44 @@ waitAction time =
                 _ -> return EL.ELWOther
                
       _ -> return EL.ELWOther
+
+printTracksInfo :: EitherT String MLM ()
+printTracksInfo =
+  do
+    env <- lift $ ask
+    et <- (lift $ lift $ mpvGetPropertyInt (ctx env) "track-list/count")
+    tracks <- hoistEitherAdjustError et
+    liftIO $ putStrLn $ "Tracks count is " ++ (show tracks)
+    mapM printTrackInfo  [0..(tracks-1)]
+
+    return ()
+  where
+    hoistEitherAdjustError :: Monad m => Either MS.MpvError a -> EitherT String m a
+    hoistEitherAdjustError (Left e) = left $ show e
+    hoistEitherAdjustError (Right a) = return a
+    printTrackInfo :: Int -> EitherT String MLM ()
+    printTrackInfo trk =
+      do
+        env <- lift $ ask
+        trackType <-
+          (lift $ lift $ mpvGetPropertyString (ctx env)
+          $ "track-list/"++(show trk)++"/type") >>= hoistEitherAdjustError
+        trackId <-
+          (lift $ lift $ mpvGetPropertyInt (ctx env)
+          $ "track-list/"++(show trk)++"/id") >>= hoistEitherAdjustError
+        trackExternal <-
+          (lift $ lift $ mpvGetPropertyBool (ctx env)
+          $ "track-list/"++(show trk)++"/external") >>= hoistEitherAdjustError
+          
+        trackFN <- if trackType == "sub" && trackExternal
+          then (lift $ lift $ mpvGetPropertyString (ctx env)
+                 $ "track-list/"++(show trk)++"/external-filename") >>= hoistEitherAdjustError
+          else return ""
+        liftIO $ putStrLn $ (printf "Track %d: type %s id: %d ext: %s fn: %s" trk trackType trackId (show trackExternal) trackFN)
+        
+        
+
+
 
 seekAction :: Double -> MLM ()
 seekAction startTime =
