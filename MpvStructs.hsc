@@ -53,8 +53,6 @@ newtype MpvError = MpvError { unMpvError :: CInt } deriving (Eq,Show)
     ,mpvErrorUnsupported = MPV_ERROR_UNSUPPORTED
     ,mpvErrorNotImplemented = MPV_ERROR_NOT_IMPLEMENTED
 } 
-
-
 instance Storable MpvEventId where
   alignment _ = #{alignment mpv_event_id}
   sizeOf _ = #{size mpv_event_id}

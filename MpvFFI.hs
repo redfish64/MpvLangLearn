@@ -20,6 +20,7 @@ module MpvFFI (mpvCreate,
               setMultipleSubfiles,
               mpvObservePropertyDouble,
               loadFiles,
+              generalMpvError,
               MFM,
               MpvFFIEnv(..),
               Ctx,
@@ -55,6 +56,9 @@ data MpvFFIEnv = MpvFFIEnv {
 
 type MFM = ReaderT MpvFFIEnv IO
 
+-- TODO HACK a general error for when we want to return an error outside of a method
+generalMpvError = MpvError (fromIntegral (-255))
+    
 data Call = CMpvCreate | CMpvInitialize | CMpvTerminateDestroy | CMpvSetOptionString
           | CMpvSetPropertyString | CMpvSetProperty
           | CMpvCommand | CSetMultipleSubfiles | CMpvWaitEvent

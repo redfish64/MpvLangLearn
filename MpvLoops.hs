@@ -1,6 +1,6 @@
 --handles controlling the mpv library on behalf of the event loops
 module MpvLoops (createInitialMpvState,
-                 MLEnv(..), MLM
+                 MLEnv(..), MLM, MLState(..)
                 ) where
 
 import MpvFFI
@@ -12,11 +12,18 @@ import Control.Monad.Reader
 import Loops
 import Text.Printf(printf)
 import Control.Monad.Trans.Either (EitherT(..),left,right,hoistEither)
+import Control.Monad.Trans.State (StateT(..),get,put)
 data MLEnv = MLEnv { ctx :: Ctx,
-                       defaultNoSrtSpeed :: Double
+                     defaultNoSrtSpeed :: Double,
+                     subTitleFilenames :: [String]
                      }
+data MLState = MLState {
+  subTrackMapping :: Maybe [Int] -- maps srt sub tracks that we know about to their corresponding
+                     -- ids in the video file. Since the video file can contain other sub
+                     -- tracks, this can affect which subtitle gets displayed for which id.
+                       }
 
-type MLM = ReaderT MLEnv MFM
+type MLM = ReaderT MLEnv (StateT MLState MFM)
 
 
 setSpeed :: Double -> MLM ()
@@ -24,7 +31,7 @@ setSpeed speed =
   do 
     liftIO $ putStrLn $ "setSpeed: "++(show speed)
     env <- ask
-    lift $ mpvSetPropertyDouble (ctx env) "speed" (realToFrac speed)
+    lift $ lift $ mpvSetPropertyDouble (ctx env) "speed" (realToFrac speed)
     liftIO $ putStrLn $ "done setSpeed: "++(show speed)
     return ()
 
@@ -32,17 +39,117 @@ setSids :: [Int] -> MLM ()
 setSids sids =
   do
     env <- ask
-    let (sid,ssid) = case sids of
-                          [] -> ("no","no")
-                          --TODO, use int based set option
-                          x : [] -> (show x,"no")
-                          x1 : x2 : _ -> (show x1, show x2)
-    liftIO $ putStrLn $ "setSids " ++ (show (sid,ssid))
-    lift $ do
-                mpvSetPropertyString (ctx env) "sid" sid
-                mpvSetPropertyString (ctx env) "secondary-sid" ssid
-    return ()
+    maybeMapping <- getOrCreateSubTrackMapping
+    case maybeMapping of
+      Nothing -> return ()
+      (Just mapping) ->
+        do
+          let (sid,ssid) = case sids of
+                           [] -> ("no","no")
+                           --TODO, use int based set option
+                           x : [] -> (show (mapping !! (x-1)),"no")
+                           x1 : x2 : _ -> (show (mapping !! (x1-1)),
+                                           show (mapping !! (x2-1)))
+          liftIO $ putStrLn $ "setSids " ++ show (sid,ssid)
+          lift $ lift $ do
+            mpvSetPropertyString (ctx env) "sid" sid
+            mpvSetPropertyString (ctx env) "secondary-sid" ssid
+          return ()
 
+--if mapping is already in the state, uses it. Otherwise attempts to get it from
+--the libmpv system
+getOrCreateSubTrackMapping :: MLM (Maybe [Int])
+getOrCreateSubTrackMapping =
+  do
+    state <- lift $ get
+    case (subTrackMapping state) of
+      mm@(Just _) -> return mm
+      Nothing ->
+        do
+          mapping <- createSubTrackMapping
+          lift $ put (state { subTrackMapping = mapping })
+          return mapping
+
+
+data TrackInfo =
+  TrackInfo { tiType :: String, tiId :: Int, tiExtFile :: Maybe String } deriving (Show)
+
+getExternalFileToSidMapping :: MLM (Maybe [(String,Int)])
+getExternalFileToSidMapping = do
+  env <- ask
+  eitherTracks <- 
+    runEitherT (do
+                   c <- ((lift $ lift $ lift $ mpvGetPropertyInt (ctx env) "track-list/count")
+                          >>= hoistEither)
+                   if c == 0 then left $ generalMpvError else return ()
+                   tis <- doit [0..(c-1)]
+                   let ftis = filter (\ti -> (tiExtFile ti) /= Nothing) tis
+                   -- liftIO $ putStrLn (printf "tis is: %s ftis is %s" (show tis) (show ftis))
+                   return $ map convertTi ftis
+               )
+  return (
+    case eitherTracks of
+      Left _ -> Nothing
+      (Right res) -> Just res
+    )
+    
+  where
+    doit :: [Int] -> EitherT MS.MpvError MLM [TrackInfo]
+    doit [] = return []
+    doit (t : ts) =
+      do
+        ti <- getTrackInfo t
+        (doit ts) >>= (return . (ti : ))
+    convertTi :: TrackInfo -> (String,Int)
+    convertTi (TrackInfo _ tiId (Just tiExtFile)) =
+      (tiExtFile,tiId)
+      
+
+
+getTrackInfo :: Int -> EitherT MS.MpvError MLM TrackInfo
+getTrackInfo tid =
+  let stid = (show tid)
+  in
+    do
+      env <- lift $ ask
+      trackType <- doMpvFfiAction $
+        mpvGetPropertyString (ctx env) $ "track-list/"++stid++"/type"
+      trackId <- doMpvFfiAction $
+        mpvGetPropertyInt (ctx env) $ "track-list/"++stid++"/id"
+      trackExternal <- doMpvFfiAction $
+        mpvGetPropertyBool (ctx env) $ "track-list/"++stid++"/external"
+      trackFN <- if trackType == "sub" && trackExternal
+                 then (doMpvFfiAction $
+                       mpvGetPropertyString (ctx env)
+                       $ "track-list/"++stid++"/external-filename") >>= return . Just
+                 else return Nothing
+      return $ TrackInfo trackType trackId trackFN
+  where
+    doMpvFfiAction :: MFM (Either MS.MpvError x) -> EitherT MS.MpvError MLM x
+    doMpvFfiAction action =
+      do
+        (lift $ lift $ lift $ action) >>= hoistEither
+
+    
+
+createSubTrackMapping :: MLM (Maybe [Int])
+createSubTrackMapping =
+  do
+    env <- ask
+    let fns = (subTitleFilenames env)
+    mEfToSid <- getExternalFileToSidMapping
+    -- liftIO $ putStrLn (printf "fns: %s, mEfToSid: %s" (show fns) (show mEfToSid))
+    case mEfToSid of
+      Nothing -> return Nothing
+      Just efToSid -> return $ Just $ doit efToSid fns
+  where
+    doit :: [(String,Int)] -> [String] -> [Int]
+    doit efToSid [] = []
+    doit efToSid (fn : fns) =
+      case lookup fn efToSid of
+        Just sid -> sid : (doit efToSid fns)
+        Nothing -> undefined --1 : (doit efToSid fns) --TODO libmpv seems to always return the exact filenames, so this should never be called.. If this one day fails
+        --   it's kind of a big deal, so we just let it bail out
 
 defaultNoSrtAction :: MLM ()
 defaultNoSrtAction =
@@ -56,7 +163,7 @@ readDouble name =
   do
 --    lift $ putStrLn $ "readDouble: "++name
     env <- ask
-    time <- (lift $ mpvGetPropertyDouble (ctx env) name)
+    time <- (lift $ lift $ mpvGetPropertyDouble (ctx env) name)
 --    lift $ putStrLn $ "done readDouble: "++name
     return $ realToFrac <$> (eitherToMaybe time)
 
@@ -74,11 +181,10 @@ waitAction :: Double -> MLM EL.ELWaitEvent
 waitAction time =
   do
     env <- ask
-    event <- lift $ (mpvWaitEvent (ctx env) (realToFrac time)) >>= lift . peek 
+    event <- lift $ lift $ (mpvWaitEvent (ctx env) (realToFrac time)) >>= lift . peek 
     liftIO $ putStrLn ("mpv_wait_event: " ++ (show (event_id event)))
 
-    --TODO FIXME HACK
-    runEitherT printTracksInfo
+    -- runEitherT printTracksInfo
     -- time <- readTimeAction
     -- liftIO $ putStrLn ("time is "++show time)
     case (MS.event_id event) of
@@ -102,7 +208,7 @@ printTracksInfo :: EitherT String MLM ()
 printTracksInfo =
   do
     env <- lift $ ask
-    et <- (lift $ lift $ mpvGetPropertyInt (ctx env) "track-list/count")
+    et <- (lift $ lift $ lift $ mpvGetPropertyInt (ctx env) "track-list/count")
     tracks <- hoistEitherAdjustError et
     liftIO $ putStrLn $ "Tracks count is " ++ (show tracks)
     mapM printTrackInfo  [0..(tracks-1)]
@@ -117,17 +223,17 @@ printTracksInfo =
       do
         env <- lift $ ask
         trackType <-
-          (lift $ lift $ mpvGetPropertyString (ctx env)
+          (lift $ lift $ lift $ mpvGetPropertyString (ctx env)
           $ "track-list/"++(show trk)++"/type") >>= hoistEitherAdjustError
         trackId <-
-          (lift $ lift $ mpvGetPropertyInt (ctx env)
+          (lift $ lift $ lift $ mpvGetPropertyInt (ctx env)
           $ "track-list/"++(show trk)++"/id") >>= hoistEitherAdjustError
         trackExternal <-
-          (lift $ lift $ mpvGetPropertyBool (ctx env)
+          (lift $ lift $ lift $ mpvGetPropertyBool (ctx env)
           $ "track-list/"++(show trk)++"/external") >>= hoistEitherAdjustError
           
         trackFN <- if trackType == "sub" && trackExternal
-          then (lift $ lift $ mpvGetPropertyString (ctx env)
+          then (lift $ lift $ lift $ mpvGetPropertyString (ctx env)
                  $ "track-list/"++(show trk)++"/external-filename") >>= hoistEitherAdjustError
           else return ""
         liftIO $ putStrLn $ (printf "Track %d: type %s id: %d ext: %s fn: %s" trk trackType trackId (show trackExternal) trackFN)
@@ -141,7 +247,7 @@ seekAction startTime =
   do
     env <- ask
     liftIO $ putStrLn $ "seeking to " ++ (show startTime)
-    lift $ mpvSetPropertyDouble (ctx env) "playback-time" (realToFrac startTime)
+    lift $ lift $ mpvSetPropertyDouble (ctx env) "playback-time" (realToFrac startTime)
     liftIO $ putStrLn $ "done seeking to " ++ (show startTime)
     return ()
 

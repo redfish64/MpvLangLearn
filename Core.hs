@@ -46,7 +46,10 @@ runit conf mpvState =
     liftIO $ putStrLn "loaded files"
     tracks <- mpvGetPropertyString ctx "track-list/count"
     liftIO $ putStrLn $ "Tracks are " ++ (show tracks)
-    runReaderT (eventLoop mpvState) (MLEnv ctx 1.0) 
+    runStateT
+      (runReaderT (eventLoop mpvState) (MLEnv ctx 1.0 (subfiles conf)))
+            (MLState Nothing)
+
     liftIO $ putStrLn "finished event loop"
     mpvTerminateDestroy ctx -- this should be in some sort of failsafe (like java finally)
     return ()

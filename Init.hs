@@ -193,7 +193,7 @@ addGapsToLoops els =
                             (fmap startTime (drop index els))
     latestEarlierTime :: Double -> [EventLoop] -> Int -> Double
     latestEarlierTime startTime els index =
-                      foldl (\b t -> if t <= startTime then (min t b) else b)
+                      foldl (\b t -> if t <= startTime then (max t b) else b)
                             0
                             (fmap endTime (take index els))
 
