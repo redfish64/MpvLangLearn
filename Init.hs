@@ -183,7 +183,7 @@ addGapsToLoops els =
     addHeadGap els index =
                let el = els !! index
                    pel = latestEarlierTime (startTime el)  els index
-                   wantedStartTime = (startTime el) + (leadSecs (val el))
+                   wantedStartTime = (startTime el) - (leadSecs (val el))
                  in el { startTime = max wantedStartTime (pel + srtGap) }
     --TODO PERF goes through entire list for each element
     earliestLaterTime :: Double -> [EventLoop] -> Int -> Double
