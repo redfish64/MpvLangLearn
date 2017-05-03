@@ -10,13 +10,13 @@ name:                MpvLangLearn
 -- PVP summary:      +-+------- breaking API changes
 --                   | | +----- non-breaking API additions
 --                   | | | +--- code changes with no API change
-version:             0.1.0.0
+version:             1.0.0.1
 
 -- A short (one-line) description of the package.
 synopsis:            Learn a foreign language using mpv and srt files
 
 -- A longer description of the package.
--- description:         
+description:         Uses subtitles to loop dialog of a video with and without displaying subtitles, to help learn a foreign language. The idea is to loop the video without subtitles, so the user can try and guess what the dialog means, and then repeat with subtitles to verify his/her answer.
 
 -- URL for the project homepage or repository.
 homepage:            http://rareventure.com/MpvLangLearn
@@ -48,10 +48,11 @@ extra-source-files:  Changes
 -- Constraint on the version of Cabal needed to build this package.
 cabal-version:       >=1.10
 
+data-files: logo.png        
 
-executable MpvLangLearn
+executable MpvLL
   -- .hs or .lhs file containing the Main module.
-  main-is:             Main.hs
+  main-is:             MpvLL.hs
   
   -- Modules included in this executable, other than Main.
   -- other-modules:       
@@ -60,7 +61,16 @@ executable MpvLangLearn
   other-extensions:    ForeignFunctionInterface
   
   -- Other library packages from which modules are imported.
-  build-depends:       base >=4.9 && <4.10, mtl >=2.2 && <2.3, deepseq >=1.4 && <1.5, split >=0.2 && <0.3, text >=1.2 && <1.3, strict, either
+  build-depends:
+                base >=4.9 && <4.10,
+                mtl >=2.2 && <2.3,
+                deepseq >=1.4 && <1.5,
+                split >=0.2 && <0.3,
+                text >=1.2 && <1.3, 
+                either              >= 4.4.1 && < 4.5,
+                transformers        >= 0.5.2 && < 0.6,
+                strict              >= 0.3.2 && < 0.4,
+                directory           >= 1.3.0 && < 1.4
   
   -- Directories containing source files.
   -- hs-source-dirs:      
@@ -70,4 +80,44 @@ executable MpvLangLearn
   
   -- Base language which the package is written in.
   default-language:    Haskell2010
+
+  extra-libraries:     mpv
+  c-sources:           foo.c
+
+executable MpvLLGui
+  -- .hs or .lhs file containing the Main module.
+  main-is:             MpvLLGui.hs
   
+  -- Modules included in this executable, other than Main.
+  -- other-modules:       
+  
+  -- LANGUAGE extensions used by modules in this package.
+  other-extensions:    ForeignFunctionInterface
+  
+  -- Other library packages from which modules are imported.
+  build-depends:
+                base >=4.9 && <4.10,
+                mtl >=2.2 && <2.3,
+                deepseq >=1.4 && <1.5,
+                split >=0.2 && <0.3,
+                text >=1.2 && <1.3, 
+                either              >= 4.4.1 && < 4.5,
+                transformers        >= 0.5.2 && < 0.6,
+                strict              >= 0.3.2 && < 0.4,
+                directory           >= 1.3.0 && < 1.4,
+                wx                  >= 0.92.2 && < 0.93,
+                wxcore              >= 0.92.2 && < 0.93
+
+  
+  -- Directories containing source files.
+  -- hs-source-dirs:      
+  
+  -- Extra tools (e.g. alex, hsc2hs, ...) needed to build the source.
+  build-tools:         hsc2hs
+  
+  -- Base language which the package is written in.
+  default-language:    Haskell2010
+
+  extra-libraries:     mpv
+  c-sources:           foo.c
+

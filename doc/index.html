@@ -11,9 +11,10 @@ once with no subtitles at all, once with the subtitles of the foreign language, 
 <p>Below is an example of this for a user who knows English and is trying to learn Chinese. 
 <img src="videoloop.svg" width="90%">
 <h2>Building/Installing</h2>
-<p>Mpv Lang Learn is available for Linux and Windows. Executables are available here: <a href="foo.html">foo.html</a>
-<p>Source is here: <a href="http://github.com/redfish64/MpvLangLearn/">http://github.com/redfish64/MpvLangLearn/</a>
-<p>In Linux, Compile with: "make" to build command line tool, and "make gui" to build gui
+<p>Mpv Lang Learn is available for Linux and Windows. Windows Executables are available here: <a href="https://github.com/redfish64/MpvLangLearn/releases/latest">https://github.com/redfish64/MpvLangLearn/releases/latest</a>
+<p>Source is here: <a href="http://github.com/redfish64/MpvLangLearn/">https://github.com/redfish64/MpvLangLearn/</a>
+<p>In Linux, you need <a href="https://www.haskell.org/ghc/">ghc</a>, and the development library files for <a href="https://mpv.io/">mpv</a>. 
+See <a href="https://wiki.haskell.org/Cabal/How_to_install_a_Cabal_package">https://wiki.haskell.org/Cabal/How_to_install_a_Cabal_package</a> for how to install.
 <h2>Running</h2>
 <p>Command line can be invoked as follows:
 <pre>MpvLL &lt;srt tracks...&gt; -- &lt;track number or none&gt;[:&lt;speed&gt;[:&lt;lead padding&gt;:&lt;trailing padding&gt;]]] -- [mpv options] &lt;video file&gt;</pre>
@@ -22,8 +23,9 @@ once with no subtitles at all, once with the subtitles of the foreign language, 
 <p>This would show the video "rtrl.avi" using subtitle tracks, "rtrl-ZN.srt" and "rtrl-EN.srt". First no subtitles would be shown (because "none" was specified), then a loop with subtitles from track 1, "rtrl-ZN.srt", 
 and finally with subtitles from track 2, "rtrl-EN.srt" 
 <h2>Other notes</h2>
-It's very important that subtitle files loaded line up with each other and the dialog of the movie. If not, the loops will not occur at the right times.
-<There are various programs on the web to do this. Just search the web for "subtitle editor".
-<p>Alternatively, you can use the 'x' and the 'z' keys within mpv to adjust the subtitle delay on the fly. Note that this will not align two different subtitle files,
+<p>It's very important that subtitle files loaded line up with each other and the dialog of the movie. If not, the loops will not occur at the right times.
+<There are various programs on the web to do this. Just search the web for "subtitle editor".</p>
+<p>You can use the 'x' and the 'z' keys within mpv to adjust the subtitle delay on the fly. Note that this will not align two different subtitle files,
 so if you are trying to use a native and a foreign language subtitle file together, and they are not aligned, you will have to edit one or the other. 
+There are several subtitle editor programs available on the web to do this. You can also use the included, srt_fixer.pl program to do this. However, the interface is rather cryptic. </p>
 </body>

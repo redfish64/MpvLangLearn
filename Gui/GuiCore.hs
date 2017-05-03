@@ -12,6 +12,7 @@ import Control.Monad.Trans.Either (EitherT,left,right,runEitherT)
 import System.Directory (doesFileExist)
 import Control.Monad.Trans.Class(lift)
 import Data.List.Split(splitOn)
+import Paths_MpvLangLearn(getDataFileName)
 -- import Graphics.UI.WXCore.WxcDefs
 -- import Graphics.UI.WXCore.Frame
 -- import Graphics.UI.WXCore.WxcClassesAL
@@ -82,7 +83,8 @@ simple f w =
 
 
     logop <- panel p []
-    bm <- bitmapCreateFromFile "logo.png"
+    logoFile <- getDataFileName "logo.png"         
+    bm <- bitmapCreateFromFile $ logoFile
     bmsize <- get bm size
     logo <- panel logop [ on paint := onPaint bm]
     -- f <- fakeout p
