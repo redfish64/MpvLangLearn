@@ -64,11 +64,12 @@ commandLine argsStr =
            Left s -> throwIO $ MyException $ "Error: " ++ s
            Right c -> return c
     srtArrays <- doMonadOnList (subfiles c) loadSrtFileAndPrintErrors
+    --putStrLn $ "------srt arrays ----"++(show (length (srtArrays !! 0)))
     let loopArrays = createAndSortLoopArrays srtArrays (tracks c)
         mpvState = createInitialMpvState loopArrays
-    -- putStrLn "------Loops for play--------- sortLoopsForPlay"
-    -- doMonadOnList loopArrays (putStrLn . show)
-    -- putStrLn "------done create list"
+    putStrLn "------Loops for play--------- sortLoopsForPlay"
+    doMonadOnList loopArrays (putStrLn . show)
+    putStrLn "------done create list"
     runReaderT (runit c mpvState) (MpvFFIEnv errorFunc)
   where
     errorFunc call mpvError = lift $ putStrLn $

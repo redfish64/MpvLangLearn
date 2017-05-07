@@ -9,9 +9,8 @@ import qualified System.IO.Strict as SIS
 import Control.DeepSeq (($!!),deepseq)
 import GHC.IO.Encoding
 import System.IO
-
-avoidcrashes h = hSetEncoding h =<< getFileSystemEncoding
-
+import qualified Data.ByteString.Lazy as BS
+    
 data Srt = Srt { startTime :: Double, endTime :: Double, text :: [String], lines :: Int }
      deriving (Show)
 data SrtError = SrtError { etext :: [String], elines :: Int }
@@ -160,8 +159,28 @@ srtFile = do
             return srts
 
 
-eatEEBBBF ('\65279' : s) = s -- U+FFEF at the start is a BOM
-eatEEBBBF s = s
+--loads both utf16 and utf8 files
+loadFile :: String -> IO String
+loadFile f =
+    do
+      contents <- BS.readFile f
+      case (BS.unpack contents) of
+        --if a utf16 file
+        (255 : 254 : s) -> loadFile2 utf16 f
+        _ -> loadFile2 utf8 f
+  where
+    loadFile2 :: TextEncoding -> String -> IO String
+    loadFile2 te f = 
+        do
+          handle <- openFile f ReadMode
+          hSetEncoding handle te
+          contents <- hGetContents handle
+          -- strictly read the entire file, then close the handle
+          contents `deepseq` hClose handle
+          return contents
+                 
+                 
+             
 
 
 --loads an srt file.
@@ -169,12 +188,7 @@ eatEEBBBF s = s
 loadSrtFile :: String -> IO [Either [String] Srt]
 loadSrtFile f =
   do
---    contents <- readFile f
-    handle <- openFile f ReadMode
-    avoidcrashes handle
-    contents <- hGetContents handle
-    contents <- return (eatEEBBBF contents)
-    contents `deepseq` hClose handle
+    contents <- loadFile f
     srts <- return $ loadSrts contents
     return srts
   where
